@@ -239,6 +239,7 @@ body {
     flex-direction: column;
     overflow: hidden;
     background: #fff;
+    position: relative;
 }
 
 .timeline-header {
@@ -247,12 +248,35 @@ body {
     background: #fafbfc;
     overflow: hidden;
     flex-shrink: 0;
+    display: flex;
+}
+
+.timeline-sticky {
+    min-width: 160px;
+    flex-shrink: 0;
+    height: 100%;
+    background: #fff;
+    border-right: 1px solid #ebeef5;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #909399;
+}
+
+.timeline-scale-wrapper {
+    flex: 1;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
 }
 
 .timeline-scale {
     height: 100%;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .timeline-month-row,

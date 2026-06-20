@@ -23,6 +23,25 @@
             return 'id_' + (state.idCounter++);
         },
 
+        syncIdCounter() {
+            let maxId = 0;
+            state.tasks.forEach(t => {
+                const m = /id_(\d+)/.exec(t.id);
+                if (m) {
+                    const n = parseInt(m[1]);
+                    if (n > maxId) maxId = n;
+                }
+            });
+            state.dependencies.forEach(d => {
+                const m = /id_(\d+)/.exec(d.id);
+                if (m) {
+                    const n = parseInt(m[1]);
+                    if (n > maxId) maxId = n;
+                }
+            });
+            state.idCounter = maxId + 1;
+        },
+
         addDays(date, days) {
             const d = new Date(date);
             d.setDate(d.getDate() + days);
@@ -944,6 +963,7 @@
 
                     state.selectedTaskId = null;
                     state.selectedDepId = null;
+                    utils.syncIdCounter();
                     renderer.renderAll();
                     utils.showToast(`成功导入 ${state.tasks.length} 个任务`, 'success');
                 } catch (err) {
@@ -1033,6 +1053,12 @@
                     taskManager.deleteDependency(state.selectedDepId);
                 }
             }
+        });
+
+        const ganttCanvas = document.getElementById('gantt-canvas');
+        const timelineScale = document.getElementById('timeline-scale');
+        ganttCanvas.addEventListener('scroll', () => {
+            timelineScale.style.transform = `translateX(${-ganttCanvas.scrollLeft}px)`;
         });
     }
 
