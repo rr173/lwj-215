@@ -4,9 +4,11 @@
     const DAY_WIDTH = 32;
     const MAX_TASKS = 100;
     const TASK_HEIGHT = 48;
+    const GROUP_SUMMARY_HEIGHT = 32;
 
     const state = {
         tasks: [],
+        groups: [],
         dependencies: [],
         projectStart: new Date(),
         selectedTaskId: null,
@@ -34,6 +36,13 @@
             });
             state.dependencies.forEach(d => {
                 const m = /id_(\d+)/.exec(d.id);
+                if (m) {
+                    const n = parseInt(m[1]);
+                    if (n > maxId) maxId = n;
+                }
+            });
+            state.groups.forEach(g => {
+                const m = /id_(\d+)/.exec(g.id);
                 if (m) {
                     const n = parseInt(m[1]);
                     if (n > maxId) maxId = n;
@@ -80,6 +89,79 @@
 
         clamp(val, min, max) {
             return Math.max(min, Math.min(max, val));
+        },
+
+        getEffectiveDuration(task) {
+            return task.type === 'milestone' ? 0 : (task.duration || 1);
+        }
+    };
+
+    const groupManager = {
+        addGroup(name) {
+            const group = {
+                id: utils.uid(),
+                name: name || `分组 ${state.groups.length + 1}`,
+                collapsed: false
+            };
+            state.groups.push(group);
+            renderer.renderAll();
+            return group;
+        },
+
+        deleteGroup(groupId) {
+            if (!confirm('确定删除此分组？组内任务将变为无分组状态。')) return;
+            state.tasks.forEach(t => {
+                if (t.groupId === groupId) {
+                    t.groupId = null;
+                }
+            });
+            state.groups = state.groups.filter(g => g.id !== groupId);
+            renderer.renderAll();
+        },
+
+        toggleGroup(groupId) {
+            const group = state.groups.find(g => g.id === groupId);
+            if (group) {
+                group.collapsed = !group.collapsed;
+                renderer.renderAll();
+            }
+        },
+
+        renameGroup(groupId, name) {
+            const group = state.groups.find(g => g.id === groupId);
+            if (group) {
+                group.name = name || '未命名分组';
+                renderer.renderGantt();
+            }
+        },
+
+        moveTaskToGroup(taskId, groupId) {
+            const task = state.tasks.find(t => t.id === taskId);
+            if (task) {
+                task.groupId = groupId;
+                renderer.renderAll();
+            }
+        },
+
+        getGroupTasks(groupId) {
+            return state.tasks.filter(t => t.groupId === groupId);
+        },
+
+        getUngroupedTasks() {
+            return state.tasks.filter(t => !t.groupId);
+        },
+
+        getGroupTimeRange(groupId) {
+            const tasks = this.getGroupTasks(groupId);
+            if (tasks.length === 0) return null;
+            let minStart = Infinity;
+            let maxEnd = -Infinity;
+            tasks.forEach(t => {
+                const duration = utils.getEffectiveDuration(t);
+                if (t._startDay < minStart) minStart = t._startDay;
+                if (t._startDay + duration > maxEnd) maxEnd = t._startDay + duration;
+            });
+            return { start: minStart, end: maxEnd };
         }
     };
 
@@ -166,15 +248,17 @@
             state.tasks.forEach(t => { taskMap[t.id] = t; });
             order.forEach(id => {
                 const task = taskMap[id];
+                const effDuration = utils.getEffectiveDuration(task);
                 let earliestDay = 0;
-                if (task.earliestStartDate) {
+                if (task.earliestStartDate && task.type !== 'milestone') {
                     earliestDay = Math.max(0, utils.diffDays(state.projectStart, new Date(task.earliestStartDate)));
                 }
                 const preds = state.dependencies.filter(d => d.to === id);
                 preds.forEach(dep => {
                     const predTask = taskMap[dep.from];
                     if (predTask) {
-                        const predEnd = predTask._startDay + predTask.duration;
+                        const predDuration = utils.getEffectiveDuration(predTask);
+                        const predEnd = predTask._startDay + predDuration;
                         if (predEnd > earliestDay) earliestDay = predEnd;
                     }
                 });
@@ -187,7 +271,8 @@
         calculateCriticalPath() {
             const taskMap = {};
             state.tasks.forEach(t => {
-                t._endDay = t._startDay + t.duration;
+                const effDuration = utils.getEffectiveDuration(t);
+                t._endDay = t._startDay + effDuration;
                 t._isCritical = false;
                 taskMap[t.id] = t;
             });
@@ -208,14 +293,15 @@
             if (!order) return;
             const revOrder = order.reverse();
             revOrder.forEach(id => {
+                const effDuration = utils.getEffectiveDuration(taskMap[id]);
                 if (successors[id].length === 0) {
-                    latestStart[id] = maxEnd - taskMap[id].duration;
+                    latestStart[id] = maxEnd - effDuration;
                 } else {
                     let minSucc = Infinity;
                     successors[id].forEach(s => {
                         if (latestStart[s] < minSucc) minSucc = latestStart[s];
                     });
-                    latestStart[id] = minSucc - taskMap[id].duration;
+                    latestStart[id] = minSucc - effDuration;
                 }
                 if (Math.abs(latestStart[id] - taskMap[id]._startDay) < 0.5) {
                     taskMap[id]._isCritical = true;
@@ -234,6 +320,7 @@
             const conflicts = {};
             const byAssignee = {};
             state.tasks.forEach(t => {
+                if (t.type === 'milestone') return;
                 if (t.assignee && t.assignee.trim()) {
                     const a = t.assignee.trim();
                     if (!byAssignee[a]) byAssignee[a] = [];
@@ -268,6 +355,7 @@
         autoBalance() {
             const byAssignee = {};
             state.tasks.forEach(t => {
+                if (t.type === 'milestone') return;
                 if (!t.assignee || !t.assignee.trim()) return;
                 const a = t.assignee.trim();
                 if (!byAssignee[a]) byAssignee[a] = [];
@@ -292,6 +380,7 @@
         getAssignees() {
             const set = new Set();
             state.tasks.forEach(t => {
+                if (t.type === 'milestone') return;
                 if (t.assignee && t.assignee.trim()) {
                     set.add(t.assignee.trim());
                 }
@@ -300,11 +389,90 @@
         }
     };
 
+    const layoutManager = {
+        getVisibleRows() {
+            if (state.isResourceView) {
+                const assignees = resourceManager.getAssignees();
+                const hasUnassigned = state.tasks.some(t => !t.assignee || !t.assignee.trim());
+                const rows = [];
+                assignees.forEach(a => {
+                    rows.push({ type: 'resource', key: a, tasks: state.tasks.filter(t => t.assignee && t.assignee.trim() === a) });
+                });
+                if (hasUnassigned) {
+                    rows.push({ type: 'resource', key: '未分配', tasks: state.tasks.filter(t => !t.assignee || !t.assignee.trim()) });
+                }
+                if (rows.length === 0) rows.push({ type: 'resource', key: '', tasks: [] });
+                return rows;
+            }
+            const rows = [];
+            state.groups.forEach(group => {
+                const groupTasks = groupManager.getGroupTasks(group.id);
+                rows.push({ type: 'group-summary', group: group, tasks: groupTasks });
+                if (!group.collapsed) {
+                    groupTasks.forEach(task => {
+                        rows.push({ type: 'task', task: task, inGroup: true });
+                    });
+                }
+            });
+            const ungrouped = groupManager.getUngroupedTasks();
+            ungrouped.forEach(task => {
+                rows.push({ type: 'task', task: task, inGroup: false });
+            });
+            return rows;
+        },
+
+        getTaskRowIndex(taskId) {
+            if (state.isResourceView) {
+                const assignees = resourceManager.getAssignees();
+                const task = state.tasks.find(t => t.id === taskId);
+                const assignee = task.assignee && task.assignee.trim() ? task.assignee.trim() : '未分配';
+                if (task.assignee && task.assignee.trim()) {
+                    return assignees.indexOf(assignee);
+                } else {
+                    return assignees.length;
+                }
+            }
+            const rows = this.getVisibleRows();
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i].type === 'task' && rows[i].task.id === taskId) {
+                    return i;
+                }
+            }
+            return -1;
+        },
+
+        getRowYOffset(rowIndex, rowType) {
+            if (state.isResourceView) {
+                return rowIndex * TASK_HEIGHT;
+            }
+            let y = 0;
+            const rows = this.getVisibleRows();
+            for (let i = 0; i < rowIndex && i < rows.length; i++) {
+                if (rows[i].type === 'group-summary') {
+                    y += GROUP_SUMMARY_HEIGHT;
+                } else {
+                    y += TASK_HEIGHT;
+                }
+            }
+            return y;
+        },
+
+        getTotalHeight() {
+            const rows = this.getVisibleRows();
+            let h = 0;
+            rows.forEach(r => {
+                h += r.type === 'group-summary' ? GROUP_SUMMARY_HEIGHT : TASK_HEIGHT;
+            });
+            return h;
+        }
+    };
+
     const renderer = {
         getTimelineDays() {
             let maxDay = 0;
             state.tasks.forEach(t => {
-                const endDay = (t._startDay || 0) + (t.duration || 3);
+                const effDuration = utils.getEffectiveDuration(t);
+                const endDay = (t._startDay || 0) + effDuration;
                 if (endDay > maxDay) maxDay = endDay;
             });
             return Math.max(60, maxDay + 30);
@@ -379,66 +547,221 @@
             const list = document.getElementById('task-list');
             const conflicts = resourceManager.findConflicts();
 
-            if (state.tasks.length === 0) {
+            if (state.tasks.length === 0 && state.groups.length === 0) {
                 list.innerHTML = '<div style="padding:40px 16px;color:#909399;font-size:12px;text-align:center;">暂无任务，点击上方按钮新增</div>';
                 return;
             }
 
             list.innerHTML = '';
-            state.tasks.forEach(task => {
-                const item = document.createElement('div');
-                item.className = 'task-item';
-                if (task.id === state.selectedTaskId) {
-                    item.classList.add('selected');
+
+            state.groups.forEach(group => {
+                this.renderGroupItem(list, group, conflicts);
+            });
+
+            const ungroupedTasks = groupManager.getUngroupedTasks();
+            if (ungroupedTasks.length > 0) {
+                if (state.groups.length > 0) {
+                    const label = document.createElement('div');
+                    label.className = 'ungrouped-label';
+                    label.textContent = '未分组';
+                    list.appendChild(label);
                 }
-                item.dataset.id = task.id;
+                ungroupedTasks.forEach(task => {
+                    this.renderTaskItem(list, task, conflicts, null);
+                });
+            }
+        },
 
-                const assignee = task.assignee && task.assignee.trim() ? task.assignee.trim() : '';
-                const assigneeCount = assignee ? (conflicts[`__assignee__${assignee}`] || 0) : 0;
+        renderGroupItem(container, group, conflicts) {
+            const groupEl = document.createElement('div');
+            groupEl.className = 'group-item';
+            groupEl.dataset.groupId = group.id;
 
-                item.innerHTML = `
-                    <div class="task-item-header">
-                        <input type="text" class="task-item-name" value="${this.escapeHtml(task.name)}" />
-                        <span class="task-item-delete" title="删除">×</span>
-                    </div>
-                    <div class="task-item-field">
+            const header = document.createElement('div');
+            header.className = 'group-header';
+
+            const toggle = document.createElement('div');
+            toggle.className = 'group-toggle' + (group.collapsed ? '' : ' expanded');
+            toggle.innerHTML = '▶';
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                groupManager.toggleGroup(group.id);
+            });
+            header.appendChild(toggle);
+
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'group-name-input';
+            nameInput.value = group.name;
+            nameInput.addEventListener('input', (e) => {
+                groupManager.renameGroup(group.id, e.target.value);
+            });
+            nameInput.addEventListener('click', (e) => e.stopPropagation());
+            header.appendChild(nameInput);
+
+            const range = groupManager.getGroupTimeRange(group.id);
+            const timeRangeEl = document.createElement('span');
+            timeRangeEl.className = 'group-time-range';
+            if (range) {
+                const startDate = utils.formatDate(utils.addDays(state.projectStart, range.start));
+                const endDate = utils.formatDate(utils.addDays(state.projectStart, range.end));
+                timeRangeEl.textContent = `${startDate} ~ ${endDate}`;
+            } else {
+                timeRangeEl.textContent = '空';
+            }
+            header.appendChild(timeRangeEl);
+
+            const delBtn = document.createElement('span');
+            delBtn.className = 'group-delete';
+            delBtn.title = '删除分组';
+            delBtn.innerHTML = '×';
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                groupManager.deleteGroup(group.id);
+            });
+            header.appendChild(delBtn);
+
+            header.addEventListener('click', () => {
+                groupManager.toggleGroup(group.id);
+            });
+
+            groupEl.appendChild(header);
+
+            const tasksContainer = document.createElement('div');
+            tasksContainer.className = 'group-tasks' + (group.collapsed ? ' collapsed' : '');
+
+            const groupTasks = groupManager.getGroupTasks(group.id);
+            groupTasks.forEach(task => {
+                this.renderTaskItem(tasksContainer, task, conflicts, group.id);
+            });
+
+            groupEl.appendChild(tasksContainer);
+
+            groupEl.addEventListener('dragover', (e) => {
+                if (e.dataTransfer && e.dataTransfer.types.includes('text/task-id')) {
+                    e.preventDefault();
+                    groupEl.classList.add('drag-over');
+                }
+            });
+            groupEl.addEventListener('dragleave', () => {
+                groupEl.classList.remove('drag-over');
+            });
+            groupEl.addEventListener('drop', (e) => {
+                e.preventDefault();
+                groupEl.classList.remove('drag-over');
+                const taskId = e.dataTransfer.getData('text/task-id');
+                if (taskId) {
+                    groupManager.moveTaskToGroup(taskId, group.id);
+                    utils.showToast('已移入分组', 'success');
+                }
+            });
+
+            container.appendChild(groupEl);
+        },
+
+        renderTaskItem(container, task, conflicts, groupId) {
+            const item = document.createElement('div');
+            item.className = 'task-item';
+            if (task.type === 'milestone') item.classList.add('milestone');
+            if (task.id === state.selectedTaskId) item.classList.add('selected');
+            item.dataset.id = task.id;
+            item.dataset.groupId = groupId || '';
+            item.draggable = true;
+
+            const assignee = task.assignee && task.assignee.trim() ? task.assignee.trim() : '';
+            const assigneeCount = assignee ? (conflicts[`__assignee__${assignee}`] || 0) : 0;
+
+            const typeBadge = task.type === 'milestone'
+                ? '<span class="task-type-badge milestone">里程碑</span>'
+                : '';
+
+            const durationField = task.type === 'milestone'
+                ? `<div class="task-item-field"><label>日期</label><div style="flex:1;font-size:12px;color:#b88230;font-weight:500;">${utils.formatDate(utils.addDays(state.projectStart, task._startDay))}</div></div>`
+                : `<div class="task-item-field">
                         <label>工期(天)</label>
                         <input type="number" class="task-duration" min="1" max="60" value="${task.duration}" />
-                    </div>
-                    <div class="task-item-field">
-                        <label>负责人</label>
-                        <div class="assignee-wrapper">
-                            <input type="text" class="assignee-input" value="${this.escapeHtml(task.assignee)}" />
-                            ${assigneeCount > 0 ? `<span class="conflict-badge">${assigneeCount}</span>` : ''}
-                        </div>
-                    </div>
-                    <div class="task-item-field">
+                    </div>`;
+
+            const earliestField = task.type === 'milestone'
+                ? ''
+                : `<div class="task-item-field">
                         <label>最早开始</label>
                         <input type="date" class="task-earliest" value="${task.earliestStartDate ? utils.formatDate(new Date(task.earliestStartDate)) : ''}" />
+                    </div>`;
+
+            item.innerHTML = `
+                <div class="task-item-header">
+                    <div style="flex:1;display:flex;align-items:center;min-width:0;">
+                        ${typeBadge}
+                        <input type="text" class="task-item-name" value="${this.escapeHtml(task.name)}" />
                     </div>
-                `;
-                list.appendChild(item);
+                    <span class="task-item-delete" title="删除">×</span>
+                </div>
+                ${durationField}
+                <div class="task-item-field">
+                    <label>负责人</label>
+                    <div class="assignee-wrapper">
+                        <input type="text" class="assignee-input" value="${this.escapeHtml(task.assignee)}" ${task.type === 'milestone' ? 'disabled style="background:#f5f7fa;"' : ''} />
+                        ${assigneeCount > 0 ? `<span class="conflict-badge">${assigneeCount}</span>` : ''}
+                    </div>
+                </div>
+                ${earliestField}
+            `;
+            container.appendChild(item);
 
-                const nameInput = item.querySelector('.task-item-name');
-                const durInput = item.querySelector('.task-duration');
-                const assigneeInput = item.querySelector('.assignee-input');
-                const earliestInput = item.querySelector('.task-earliest');
-                const delBtn = item.querySelector('.task-item-delete');
+            item.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/task-id', task.id);
+                item.classList.add('dragging');
+                e.stopPropagation();
+            });
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+            });
 
-                nameInput.addEventListener('focus', () => {
-                    state.selectedTaskId = task.id;
-                    state.selectedDepId = null;
-                    this.renderTaskList();
-                    this.renderGantt();
-                    this.renderDependencies();
-                });
+            item.addEventListener('dragover', (e) => {
+                if (e.dataTransfer && e.dataTransfer.types.includes('text/task-id')) {
+                    const srcId = e.dataTransfer.getData('text/task-id');
+                    if (srcId && srcId !== task.id) {
+                        e.preventDefault();
+                        item.classList.add('drop-target');
+                    }
+                }
+            });
+            item.addEventListener('dragleave', () => {
+                item.classList.remove('drop-target');
+            });
+            item.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                item.classList.remove('drop-target');
+                const taskId = e.dataTransfer.getData('text/task-id');
+                if (taskId && taskId !== task.id) {
+                    groupManager.moveTaskToGroup(taskId, task.groupId || null);
+                    utils.showToast('已变更分组', 'success');
+                }
+            });
 
-                nameInput.addEventListener('input', (e) => {
-                    task.name = e.target.value || '未命名任务';
-                    this.renderGantt();
-                    this.renderDependencies();
-                });
+            const nameInput = item.querySelector('.task-item-name');
+            const durInput = item.querySelector('.task-duration');
+            const assigneeInput = item.querySelector('.assignee-input');
+            const earliestInput = item.querySelector('.task-earliest');
+            const delBtn = item.querySelector('.task-item-delete');
 
+            nameInput.addEventListener('focus', () => {
+                state.selectedTaskId = task.id;
+                state.selectedDepId = null;
+                this.renderTaskList();
+                this.renderGantt();
+                this.renderDependencies();
+            });
+
+            nameInput.addEventListener('input', (e) => {
+                task.name = e.target.value || '未命名任务';
+                this.renderGantt();
+                this.renderDependencies();
+            });
+
+            if (durInput) {
                 durInput.addEventListener('change', (e) => {
                     let val = parseInt(e.target.value);
                     if (isNaN(val)) val = 1;
@@ -447,20 +770,22 @@
                     task.duration = val;
                     this.renderAll();
                 });
+            }
 
-                assigneeInput.addEventListener('input', (e) => {
-                    task.assignee = e.target.value;
-                    this.renderAll();
-                });
+            assigneeInput.addEventListener('input', (e) => {
+                task.assignee = e.target.value;
+                this.renderAll();
+            });
 
+            if (earliestInput) {
                 earliestInput.addEventListener('change', (e) => {
                     task.earliestStartDate = e.target.value ? new Date(e.target.value) : null;
                     this.renderAll();
                 });
+            }
 
-                delBtn.addEventListener('click', () => {
-                    taskManager.deleteTask(task.id);
-                });
+            delBtn.addEventListener('click', () => {
+                taskManager.deleteTask(task.id);
             });
         },
 
@@ -469,65 +794,125 @@
             const totalDays = this.getTimelineDays();
             const width = totalDays * DAY_WIDTH;
             rowsContainer.innerHTML = '';
+            rowsContainer.style.height = layoutManager.getTotalHeight() + 'px';
 
             const conflicts = resourceManager.findConflicts();
+            const rows = layoutManager.getVisibleRows();
 
-            if (state.isResourceView) {
-                const assignees = resourceManager.getAssignees();
-                const hasUnassigned = state.tasks.some(t => !t.assignee || !t.assignee.trim());
-                const rowHeaders = [...assignees];
-                if (hasUnassigned) rowHeaders.push('未分配');
-                if (rowHeaders.length === 0) rowHeaders.push('');
+            rows.forEach(row => {
+                if (row.type === 'resource') {
+                    this.renderResourceRow(rowsContainer, row, width, totalDays, conflicts);
+                } else if (row.type === 'group-summary') {
+                    this.renderGroupSummaryRow(rowsContainer, row, width, totalDays);
+                } else if (row.type === 'task') {
+                    this.renderTaskRow(rowsContainer, row, width, totalDays, conflicts);
+                }
+            });
+        },
 
-                rowHeaders.forEach(assignee => {
-                    const row = document.createElement('div');
-                    row.className = 'gantt-row resource-row';
+        renderResourceRow(container, row, width, totalDays, conflicts) {
+            const el = document.createElement('div');
+            el.className = 'gantt-row resource-row';
 
-                    const tasks = assignee === '未分配' || assignee === '' ?
-                        state.tasks.filter(t => !t.assignee || !t.assignee.trim()) :
-                        state.tasks.filter(t => t.assignee && t.assignee.trim() === assignee);
-
-                    const label = document.createElement('div');
-                    label.className = 'gantt-row-label';
-                    const displayName = assignee || '未分配';
-                    const count = assignee && assignee !== '未分配' ?
-                        (conflicts[`__assignee__${assignee}`] || 0) : 0;
-                    label.textContent = displayName;
-                    if (count > 0) {
-                        label.innerHTML = `${displayName} <span class="conflict-badge">${count}</span>`;
-                    }
-                    row.appendChild(label);
-
-                    const grid = document.createElement('div');
-                    grid.className = 'gantt-row-grid';
-                    grid.style.width = width + 'px';
-                    this.renderGridColumns(grid, totalDays);
-                    tasks.forEach(task => {
-                        this.renderTaskBar(grid, task, conflicts);
-                    });
-                    row.appendChild(grid);
-                    rowsContainer.appendChild(row);
-                });
-            } else {
-                state.tasks.forEach(task => {
-                    const row = document.createElement('div');
-                    row.className = 'gantt-row';
-
-                    const label = document.createElement('div');
-                    label.className = 'gantt-row-label';
-                    label.textContent = task.name || '未命名任务';
-                    row.appendChild(label);
-
-                    const grid = document.createElement('div');
-                    grid.className = 'gantt-row-grid';
-                    grid.style.width = width + 'px';
-                    grid.dataset.taskId = task.id;
-                    this.renderGridColumns(grid, totalDays);
-                    this.renderTaskBar(grid, task, conflicts);
-                    row.appendChild(grid);
-                    rowsContainer.appendChild(row);
-                });
+            const label = document.createElement('div');
+            label.className = 'gantt-row-label';
+            const displayName = row.key || '未分配';
+            const assignee = row.key;
+            const count = assignee && assignee !== '未分配' ?
+                (conflicts[`__assignee__${assignee}`] || 0) : 0;
+            label.textContent = displayName;
+            if (count > 0) {
+                label.innerHTML = `${displayName} <span class="conflict-badge">${count}</span>`;
             }
+            el.appendChild(label);
+
+            const grid = document.createElement('div');
+            grid.className = 'gantt-row-grid';
+            grid.style.width = width + 'px';
+            this.renderGridColumns(grid, totalDays);
+            row.tasks.forEach(task => {
+                if (task.type === 'milestone') {
+                    this.renderMilestone(grid, task);
+                } else {
+                    this.renderTaskBar(grid, task, conflicts);
+                }
+            });
+            el.appendChild(grid);
+            container.appendChild(el);
+        },
+
+        renderGroupSummaryRow(container, row, width, totalDays) {
+            const group = row.group;
+            const el = document.createElement('div');
+            el.className = 'gantt-row group-summary-row';
+            el.dataset.groupId = group.id;
+
+            const label = document.createElement('div');
+            label.className = 'gantt-row-label';
+            const toggleChar = group.collapsed ? '▶' : '▼';
+            label.innerHTML = `<span style="display:inline-block;width:16px;">${toggleChar}</span>${this.escapeHtml(group.name)}`;
+            label.style.cursor = 'pointer';
+            label.addEventListener('click', () => {
+                groupManager.toggleGroup(group.id);
+            });
+            el.appendChild(label);
+
+            const grid = document.createElement('div');
+            grid.className = 'gantt-row-grid';
+            grid.style.width = width + 'px';
+            this.renderGridColumns(grid, totalDays);
+
+            const range = groupManager.getGroupTimeRange(group.id);
+            if (range && range.end > range.start) {
+                const summary = document.createElement('div');
+                summary.className = 'group-summary-bar';
+                summary.style.left = (range.start * DAY_WIDTH) + 'px';
+                summary.style.width = ((range.end - range.start) * DAY_WIDTH) + 'px';
+
+                const taskCount = row.tasks.length;
+                const startDate = utils.formatDate(utils.addDays(state.projectStart, range.start));
+                const endDate = utils.formatDate(utils.addDays(state.projectStart, range.end));
+                const summaryLabel = document.createElement('span');
+                summaryLabel.className = 'group-summary-bar-label';
+                summaryLabel.textContent = `${taskCount}项  ${startDate} ~ ${endDate}`;
+                summary.appendChild(summaryLabel);
+                grid.appendChild(summary);
+            }
+
+            el.appendChild(grid);
+            container.appendChild(el);
+        },
+
+        renderTaskRow(container, row, width, totalDays, conflicts) {
+            const task = row.task;
+            const el = document.createElement('div');
+            el.className = 'gantt-row';
+            if (row.inGroup) el.classList.add('group-task-row');
+
+            const label = document.createElement('div');
+            label.className = 'gantt-row-label';
+            const prefix = task.type === 'milestone' ? '◆ ' : '';
+            label.textContent = prefix + (task.name || '未命名任务');
+            if (task.type === 'milestone') {
+                label.style.color = '#b88230';
+                label.style.fontWeight = '600';
+            }
+            el.appendChild(label);
+
+            const grid = document.createElement('div');
+            grid.className = 'gantt-row-grid';
+            grid.style.width = width + 'px';
+            grid.dataset.taskId = task.id;
+            this.renderGridColumns(grid, totalDays);
+
+            if (task.type === 'milestone') {
+                this.renderMilestone(grid, task);
+            } else {
+                this.renderTaskBar(grid, task, conflicts);
+            }
+
+            el.appendChild(grid);
+            container.appendChild(el);
         },
 
         renderGridColumns(grid, totalDays) {
@@ -575,6 +960,32 @@
 
             this.attachTaskBarEvents(bar, task, handleEnd);
             grid.appendChild(bar);
+        },
+
+        renderMilestone(grid, task) {
+            const marker = document.createElement('div');
+            marker.className = 'milestone-marker';
+            marker.dataset.id = task.id;
+
+            if (task._isCritical) marker.classList.add('critical');
+            if (task.id === state.selectedTaskId) marker.classList.add('selected');
+
+            marker.style.left = (task._startDay * DAY_WIDTH) + 'px';
+
+            const depHandle = document.createElement('div');
+            depHandle.className = 'milestone-dep-handle';
+            depHandle.title = '拖拽创建依赖';
+            marker.appendChild(depHandle);
+
+            const label = document.createElement('div');
+            label.className = 'milestone-marker-label';
+            label.textContent = `${task.name}`;
+            label.style.left = (26) + 'px';
+            label.style.top = '50%';
+
+            this.attachMilestoneEvents(marker, task, depHandle);
+            grid.appendChild(marker);
+            grid.appendChild(label);
         },
 
         attachTaskBarEvents(bar, task, handleEnd) {
@@ -656,88 +1067,101 @@
             });
 
             handleEnd.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-
-                state.depDragState = {
-                    fromId: task.id,
-                    toId: null
-                };
-
-                const svg = document.getElementById('dependency-svg');
-                const preview = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                preview.setAttribute('class', 'dep-line-preview');
-                preview.setAttribute('id', 'dep-preview');
-                svg.appendChild(preview);
-
-                const onMove = (ev) => {
-                    if (!state.depDragState) return;
-
-                    const canvas = document.getElementById('gantt-canvas');
-                    const rect = canvas.getBoundingClientRect();
-
-                    const fromRow = this.getTaskRowIndex(task.id);
-                    const fromX1 = (task._startDay + task.duration) * DAY_WIDTH;
-                    const fromY = fromRow * TASK_HEIGHT + TASK_HEIGHT / 2;
-
-                    const toX = ev.clientX - rect.left + canvas.scrollLeft;
-                    const toY = ev.clientY - rect.top + canvas.scrollTop;
-
-                    const midX = (fromX1 + toX) / 2;
-                    const d = `M ${fromX1} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
-                    preview.setAttribute('d', d);
-
-                    const target = document.elementFromPoint(ev.clientX, ev.clientY);
-                    const taskBar = target ? target.closest('.task-bar') : null;
-                    state.depDragState.toId = taskBar ? taskBar.dataset.id : null;
-                };
-
-                const onUp = (ev) => {
-                    preview.remove();
-
-                    if (state.depDragState && state.depDragState.toId &&
-                        state.depDragState.toId !== state.depDragState.fromId) {
-                        const cycle = scheduler.detectCycleWithNewDep(
-                            state.depDragState.fromId,
-                            state.depDragState.toId
-                        );
-
-                        if (cycle) {
-                            utils.flashScreen();
-                            const cycleNames = cycle.map(id => {
-                                const t = state.tasks.find(x => x.id === id);
-                                return t ? t.name : id;
-                            }).join(' → ');
-                            utils.showToast('检测到循环依赖: ' + cycleNames, 'error');
-                        } else {
-                            taskManager.addDependency(state.depDragState.fromId, state.depDragState.toId);
-                        }
-                    }
-
-                    state.depDragState = null;
-                    document.removeEventListener('mousemove', onMove);
-                    document.removeEventListener('mouseup', onUp);
-                };
-
-                document.addEventListener('mousemove', onMove);
-                document.addEventListener('mouseup', onUp);
+                this.startDependencyDrag(task, e);
             });
         },
 
-        getTaskRowIndex(taskId) {
-            if (state.isResourceView) {
-                const assignees = resourceManager.getAssignees();
-                const hasUnassigned = state.tasks.some(t => !t.assignee || !t.assignee.trim());
-                const task = state.tasks.find(t => t.id === taskId);
-                const assignee = task.assignee && task.assignee.trim() ? task.assignee.trim() : '未分配';
+        attachMilestoneEvents(marker, task, depHandle) {
+            marker.addEventListener('mousedown', (e) => {
+                if (e.target === depHandle) return;
+                e.stopPropagation();
+                state.selectedTaskId = task.id;
+                state.selectedDepId = null;
+                this.renderTaskList();
+                this.renderGantt();
+                this.renderDependencies();
+            });
 
-                if (task.assignee && task.assignee.trim()) {
-                    return assignees.indexOf(assignee);
+            depHandle.addEventListener('mousedown', (e) => {
+                this.startDependencyDrag(task, e);
+            });
+        },
+
+        startDependencyDrag(task, e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            state.depDragState = {
+                fromId: task.id,
+                toId: null
+            };
+
+            const svg = document.getElementById('dependency-svg');
+            const preview = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            preview.setAttribute('class', 'dep-line-preview');
+            preview.setAttribute('id', 'dep-preview');
+            svg.appendChild(preview);
+
+            const effDuration = utils.getEffectiveDuration(task);
+
+            const onMove = (ev) => {
+                if (!state.depDragState) return;
+
+                const canvas = document.getElementById('gantt-canvas');
+                const rect = canvas.getBoundingClientRect();
+
+                const fromRowIdx = layoutManager.getTaskRowIndex(task.id);
+                const fromX1 = (task._startDay + effDuration) * DAY_WIDTH;
+                let fromY;
+                if (state.isResourceView) {
+                    fromY = fromRowIdx * TASK_HEIGHT + TASK_HEIGHT / 2;
                 } else {
-                    return assignees.length;
+                    fromY = layoutManager.getRowYOffset(fromRowIdx) + TASK_HEIGHT / 2;
                 }
-            }
-            return state.tasks.findIndex(t => t.id === taskId);
+
+                const toX = ev.clientX - rect.left + canvas.scrollLeft;
+                const toY = ev.clientY - rect.top + canvas.scrollTop;
+
+                const midX = (fromX1 + toX) / 2;
+                const d = `M ${fromX1} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
+                preview.setAttribute('d', d);
+
+                const target = document.elementFromPoint(ev.clientX, ev.clientY);
+                const taskBar = target ? target.closest('.task-bar') : null;
+                const milestone = target ? target.closest('.milestone-marker') : null;
+                const el = taskBar || milestone;
+                state.depDragState.toId = el ? el.dataset.id : null;
+            };
+
+            const onUp = () => {
+                preview.remove();
+
+                if (state.depDragState && state.depDragState.toId &&
+                    state.depDragState.toId !== state.depDragState.fromId) {
+                    const cycle = scheduler.detectCycleWithNewDep(
+                        state.depDragState.fromId,
+                        state.depDragState.toId
+                    );
+
+                    if (cycle) {
+                        utils.flashScreen();
+                        const cycleNames = cycle.map(id => {
+                            const t = state.tasks.find(x => x.id === id);
+                            return t ? t.name : id;
+                        }).join(' → ');
+                        utils.showToast('检测到循环依赖: ' + cycleNames, 'error');
+                    } else {
+                        taskManager.addDependency(state.depDragState.fromId, state.depDragState.toId);
+                    }
+                }
+
+                state.depDragState = null;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
         },
 
         getMinValidStart(taskId) {
@@ -746,7 +1170,8 @@
             preds.forEach(dep => {
                 const pred = state.tasks.find(t => t.id === dep.from);
                 if (pred) {
-                    const end = pred._startDay + pred.duration;
+                    const predDuration = utils.getEffectiveDuration(pred);
+                    const end = pred._startDay + predDuration;
                     if (end > minDay) minDay = end;
                 }
             });
@@ -756,19 +1181,10 @@
         renderDependencies() {
             const svg = document.getElementById('dependency-svg');
             const totalDays = this.getTimelineDays();
-            let totalRows;
-
-            if (state.isResourceView) {
-                const assignees = resourceManager.getAssignees();
-                const hasUnassigned = state.tasks.some(t => !t.assignee || !t.assignee.trim());
-                totalRows = assignees.length + (hasUnassigned ? 1 : 0);
-            } else {
-                totalRows = state.tasks.length;
-            }
-            totalRows = Math.max(1, totalRows);
+            const totalHeight = Math.max(100, layoutManager.getTotalHeight());
 
             svg.setAttribute('width', totalDays * DAY_WIDTH);
-            svg.setAttribute('height', totalRows * TASK_HEIGHT + 100);
+            svg.setAttribute('height', totalHeight + 100);
             svg.innerHTML = `
                 <defs>
                     <marker id="arrowhead" markerWidth="10" markerHeight="7"
@@ -783,13 +1199,22 @@
                 const toTask = state.tasks.find(t => t.id === dep.to);
                 if (!fromTask || !toTask) return;
 
-                const fromRow = this.getTaskRowIndex(dep.from);
-                const toRow = this.getTaskRowIndex(dep.to);
+                const fromRowIdx = layoutManager.getTaskRowIndex(dep.from);
+                const toRowIdx = layoutManager.getTaskRowIndex(dep.to);
+                if (fromRowIdx < 0 || toRowIdx < 0) return;
 
-                const fromX = (fromTask._startDay + fromTask.duration) * DAY_WIDTH;
-                const fromY = fromRow * TASK_HEIGHT + TASK_HEIGHT / 2;
+                const fromDuration = utils.getEffectiveDuration(fromTask);
+                let fromY, toY;
+                if (state.isResourceView) {
+                    fromY = fromRowIdx * TASK_HEIGHT + TASK_HEIGHT / 2;
+                    toY = toRowIdx * TASK_HEIGHT + TASK_HEIGHT / 2;
+                } else {
+                    fromY = layoutManager.getRowYOffset(fromRowIdx) + TASK_HEIGHT / 2;
+                    toY = layoutManager.getRowYOffset(toRowIdx) + TASK_HEIGHT / 2;
+                }
+
+                const fromX = (fromTask._startDay + fromDuration) * DAY_WIDTH;
                 const toX = toTask._startDay * DAY_WIDTH;
-                const toY = toRow * TASK_HEIGHT + TASK_HEIGHT / 2;
 
                 const midX = (fromX + toX) / 2;
                 const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -823,8 +1248,10 @@
         },
 
         updateTaskCount() {
+            const milestoneCount = state.tasks.filter(t => t.type === 'milestone').length;
+            const taskCount = state.tasks.length - milestoneCount;
             document.getElementById('task-count').textContent =
-                `${state.tasks.length} / ${MAX_TASKS} 个任务`;
+                `${taskCount}任务 / ${milestoneCount}里程碑 / ${MAX_TASKS} 总数`;
         },
 
         escapeHtml(str) {
@@ -835,19 +1262,22 @@
     };
 
     const taskManager = {
-        addTask() {
+        addTask(type = 'task') {
             if (state.tasks.length >= MAX_TASKS) {
                 utils.showToast(`任务数量已达上限 ${MAX_TASKS}`, 'error');
                 return;
             }
+            const isMilestone = type === 'milestone';
             const task = {
                 id: utils.uid(),
-                name: `任务 ${state.tasks.length + 1}`,
-                duration: 3,
+                name: isMilestone ? `里程碑 ${state.tasks.filter(t => t.type === 'milestone').length + 1}` : `任务 ${state.tasks.filter(t => t.type !== 'milestone').length + 1}`,
+                type: isMilestone ? 'milestone' : 'task',
+                duration: isMilestone ? 0 : 3,
                 assignee: '',
                 earliestStartDate: null,
+                groupId: null,
                 _startDay: 0,
-                _endDay: 3,
+                _endDay: isMilestone ? 0 : 3,
                 _isCritical: false
             };
             state.tasks.push(task);
@@ -896,10 +1326,17 @@
                 tasks: state.tasks.map(t => ({
                     id: t.id,
                     name: t.name,
+                    type: t.type || 'task',
                     duration: t.duration,
                     assignee: t.assignee,
+                    groupId: t.groupId || null,
                     earliestStartDate: t.earliestStartDate ?
                         utils.formatDate(new Date(t.earliestStartDate)) : null
+                })),
+                groups: state.groups.map(g => ({
+                    id: g.id,
+                    name: g.name,
+                    collapsed: g.collapsed
                 })),
                 dependencies: state.dependencies.map(d => ({
                     id: d.id,
@@ -931,19 +1368,34 @@
 
                     const oldTasks = JSON.parse(JSON.stringify(state.tasks));
                     const oldDeps = JSON.parse(JSON.stringify(state.dependencies));
+                    const oldGroups = JSON.parse(JSON.stringify(state.groups));
                     const oldStart = new Date(state.projectStart);
 
                     state.tasks = data.tasks.map(t => ({
                         ...t,
+                        type: t.type || 'task',
+                        groupId: t.groupId || null,
                         earliestStartDate: t.earliestStartDate ? new Date(t.earliestStartDate) : null,
                         _startDay: 0,
                         _endDay: 0,
                         _isCritical: false
                     }));
+                    state.groups = Array.isArray(data.groups) ? data.groups.map(g => ({
+                        id: g.id,
+                        name: g.name,
+                        collapsed: !!g.collapsed
+                    })) : [];
                     state.dependencies = data.dependencies;
                     if (data.projectStart) {
                         state.projectStart = new Date(data.projectStart);
                     }
+
+                    const validGroupIds = new Set(state.groups.map(g => g.id));
+                    state.tasks.forEach(t => {
+                        if (t.groupId && !validGroupIds.has(t.groupId)) {
+                            t.groupId = null;
+                        }
+                    });
 
                     const cycle = scheduler.detectCycle();
                     if (cycle) {
@@ -954,6 +1406,7 @@
 
                         state.tasks = oldTasks;
                         state.dependencies = oldDeps;
+                        state.groups = oldGroups;
                         state.projectStart = oldStart;
 
                         utils.flashScreen();
@@ -965,7 +1418,7 @@
                     state.selectedDepId = null;
                     utils.syncIdCounter();
                     renderer.renderAll();
-                    utils.showToast(`成功导入 ${state.tasks.length} 个任务`, 'success');
+                    utils.showToast(`成功导入 ${state.tasks.length} 个任务${state.groups.length ? `，${state.groups.length} 个分组` : ''}`, 'success');
                 } catch (err) {
                     utils.showToast('导入失败: ' + err.message, 'error');
                 }
@@ -976,7 +1429,17 @@
 
     function initEvents() {
         document.getElementById('btn-add-task').addEventListener('click', () => {
-            taskManager.addTask();
+            const typeSelect = document.getElementById('select-task-type');
+            const type = typeSelect ? typeSelect.value : 'task';
+            taskManager.addTask(type);
+        });
+
+        document.getElementById('btn-add-group').addEventListener('click', () => {
+            const name = prompt('请输入分组名称：', `分组 ${state.groups.length + 1}`);
+            if (name !== null) {
+                groupManager.addGroup(name);
+                utils.showToast('分组创建成功', 'success');
+            }
         });
 
         document.getElementById('btn-view-toggle').addEventListener('click', (e) => {
@@ -1037,7 +1500,7 @@
         });
 
         document.getElementById('gantt-canvas').addEventListener('click', (e) => {
-            if (!e.target.closest('.task-bar') && !e.target.closest('.dep-line')) {
+            if (!e.target.closest('.task-bar') && !e.target.closest('.milestone-marker') && !e.target.closest('.dep-line')) {
                 state.selectedTaskId = null;
                 state.selectedDepId = null;
                 renderer.renderTaskList();

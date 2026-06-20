@@ -24,7 +24,14 @@
             <aside class="sidebar">
                 <div class="sidebar-header">
                     <h2>任务列表</h2>
-                    <button id="btn-add-task" class="btn btn-primary btn-sm">+ 新增任务</button>
+                    <div class="sidebar-header-btns">
+                        <button id="btn-add-group" class="btn btn-sm">+ 分组</button>
+                        <select id="select-task-type" class="select-task-type">
+                            <option value="task">任务</option>
+                            <option value="milestone">里程碑</option>
+                        </select>
+                        <button id="btn-add-task" class="btn btn-primary btn-sm">+ 新增</button>
+                    </div>
                 </div>
                 <div id="task-list" class="task-list"></div>
                 <div class="sidebar-footer">
