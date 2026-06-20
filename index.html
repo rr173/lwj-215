@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>项目排程甘特图编辑器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <header class="toolbar">
+            <h1>项目排程甘特图编辑器</h1>
+            <div class="toolbar-actions">
+                <button id="btn-view-toggle" class="btn">资源视图</button>
+                <button id="btn-balance" class="btn btn-primary">自动平衡</button>
+                <button id="btn-undo-balance" class="btn" disabled>撤销平衡</button>
+                <button id="btn-export" class="btn">导出JSON</button>
+                <button id="btn-import" class="btn">导入JSON</button>
+                <input type="file" id="file-import" accept=".json" hidden>
+            </div>
+        </header>
+
+        <div class="main">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>任务列表</h2>
+                    <button id="btn-add-task" class="btn btn-primary btn-sm">+ 新增任务</button>
+                </div>
+                <div id="task-list" class="task-list"></div>
+                <div class="sidebar-footer">
+                    <span id="task-count">0 / 100 个任务</span>
+                </div>
+            </aside>
+
+            <section class="canvas-container">
+                <div class="timeline-header">
+                    <div id="timeline-scale" class="timeline-scale"></div>
+                </div>
+                <div id="gantt-canvas" class="gantt-canvas">
+                    <svg id="dependency-svg" class="dependency-svg"></svg>
+                    <div id="gantt-rows" class="gantt-rows"></div>
+                </div>
+            </section>
+        </div>
+
+        <div id="toast" class="toast"></div>
+
+        <div id="flash-overlay" class="flash-overlay"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

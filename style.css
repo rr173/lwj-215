@@ -1,0 +1,582 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f5f7fa;
+    color: #333;
+    overflow: hidden;
+    height: 100vh;
+}
+
+.app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 24px;
+    background: #fff;
+    border-bottom: 1px solid #e4e7ed;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    z-index: 10;
+}
+
+.toolbar h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.toolbar-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn {
+    padding: 7px 14px;
+    border: 1px solid #dcdfe6;
+    background: #fff;
+    color: #606266;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.btn:hover:not(:disabled) {
+    color: #409eff;
+    border-color: #c6e2ff;
+    background: #ecf5ff;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: #409eff;
+    color: #fff;
+    border-color: #409eff;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #66b1ff;
+    border-color: #66b1ff;
+    color: #fff;
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+.btn-danger {
+    background: #f56c6c;
+    color: #fff;
+    border-color: #f56c6c;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #f78989;
+    border-color: #f78989;
+    color: #fff;
+}
+
+.main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.sidebar {
+    width: 320px;
+    background: #fff;
+    border-right: 1px solid #e4e7ed;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid #ebeef5;
+}
+
+.sidebar-header h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #303133;
+}
+
+.sidebar-footer {
+    padding: 10px 16px;
+    border-top: 1px solid #ebeef5;
+    font-size: 12px;
+    color: #909399;
+}
+
+.task-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.task-item {
+    padding: 12px;
+    margin-bottom: 8px;
+    background: #fafbfc;
+    border: 1px solid #ebeef5;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.task-item:hover {
+    border-color: #dcdfe6;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.task-item.selected {
+    border-color: #409eff;
+    background: #ecf5ff;
+}
+
+.task-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.task-item-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: #303133;
+    flex: 1;
+    word-break: break-all;
+}
+
+.task-item-delete {
+    color: #c0c4cc;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 14px;
+    margin-left: 8px;
+}
+
+.task-item-delete:hover {
+    color: #f56c6c;
+    background: #fef0f0;
+}
+
+.task-item-field {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 12px;
+}
+
+.task-item-field:last-child {
+    margin-bottom: 0;
+}
+
+.task-item-field label {
+    width: 70px;
+    color: #909399;
+    flex-shrink: 0;
+}
+
+.task-item-field input {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid #dcdfe6;
+    border-radius: 3px;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.task-item-field input:focus {
+    border-color: #409eff;
+}
+
+.task-item-field .assignee-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.task-item-field .assignee-input {
+    flex: 1;
+}
+
+.conflict-badge {
+    background: #e6a23c;
+    color: #fff;
+    border-radius: 10px;
+    padding: 1px 6px;
+    font-size: 11px;
+    margin-left: 6px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.canvas-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #fff;
+}
+
+.timeline-header {
+    height: 56px;
+    border-bottom: 1px solid #e4e7ed;
+    background: #fafbfc;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.timeline-scale {
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.timeline-month-row,
+.timeline-day-row {
+    height: 28px;
+    position: relative;
+    border-bottom: 1px solid #ebeef5;
+}
+
+.timeline-day-row {
+    border-bottom: none;
+}
+
+.timeline-month-label {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    font-weight: 600;
+    color: #606266;
+    white-space: nowrap;
+}
+
+.timeline-day-label {
+    position: absolute;
+    top: 50%;
+    transform: translateX(-50%) translateY(-50%);
+    font-size: 10px;
+    color: #909399;
+    white-space: nowrap;
+}
+
+.timeline-day-label.weekend {
+    color: #f56c6c;
+}
+
+.gantt-canvas {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+}
+
+.dependency-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+    overflow: visible;
+}
+
+.dependency-svg path {
+    pointer-events: stroke;
+    cursor: pointer;
+}
+
+.gantt-rows {
+    position: relative;
+    min-width: 100%;
+}
+
+.gantt-row {
+    height: 48px;
+    border-bottom: 1px solid #f0f2f5;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.gantt-row.resource-row {
+    background: #fafbfc;
+}
+
+.gantt-row-label {
+    position: sticky;
+    left: 0;
+    background: #fff;
+    padding: 0 16px;
+    min-width: 160px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: #606266;
+    border-right: 1px solid #ebeef5;
+    z-index: 3;
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.resource-row .gantt-row-label {
+    font-weight: 600;
+    color: #303133;
+    background: #f4f4f5;
+}
+
+.gantt-row-grid {
+    flex: 1;
+    height: 100%;
+    position: relative;
+}
+
+.grid-column {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-right: 1px solid #f5f7fa;
+}
+
+.grid-column.weekend {
+    background: #fafafa;
+}
+
+.task-bar {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 28px;
+    background: linear-gradient(180deg, #67c23a 0%, #5daf34 100%);
+    border: 2px solid transparent;
+    border-radius: 4px;
+    cursor: move;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    font-size: 11px;
+    color: #fff;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    z-index: 2;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: box-shadow 0.2s, transform 0.1s;
+    user-select: none;
+}
+
+.task-bar:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.task-bar.critical {
+    background: linear-gradient(180deg, #f56c6c 0%, #e04040 100%);
+    border-color: #c03434;
+    border-width: 2px;
+}
+
+.task-bar.critical::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border: 2px solid #c03434;
+    border-radius: 6px;
+    pointer-events: none;
+}
+
+.task-bar.selected {
+    outline: 3px solid #409eff;
+    outline-offset: 1px;
+}
+
+.task-bar.dragging {
+    opacity: 0.8;
+    z-index: 10;
+}
+
+.task-bar.invalid {
+    background: repeating-linear-gradient(
+        45deg,
+        #f56c6c,
+        #f56c6c 6px,
+        #f89898 6px,
+        #f89898 12px
+    ) !important;
+    border-color: #c03434 !important;
+}
+
+.task-bar-handle-start,
+.task-bar-handle-end {
+    position: absolute;
+    top: 0;
+    width: 8px;
+    height: 100%;
+    cursor: ew-resize;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.task-bar:hover .task-bar-handle-start,
+.task-bar:hover .task-bar-handle-end {
+    opacity: 1;
+}
+
+.task-bar-handle-start {
+    left: 0;
+    border-radius: 4px 0 0 4px;
+}
+
+.task-bar-handle-end {
+    right: 0;
+    border-radius: 0 4px 4px 0;
+}
+
+.task-bar-handle-end.dependency-source {
+    background: rgba(255, 255, 255, 0.3);
+    cursor: crosshair;
+    opacity: 1;
+}
+
+.task-bar-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+.task-warning-bar {
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    height: 3px;
+    background: #e6a23c;
+    border-radius: 2px;
+    z-index: 1;
+}
+
+.dep-line {
+    fill: none;
+    stroke: #909399;
+    stroke-width: 2;
+    transition: stroke 0.2s, stroke-width 0.2s;
+}
+
+.dep-line:hover,
+.dep-line.selected {
+    stroke: #409eff;
+    stroke-width: 3;
+}
+
+.dep-arrow {
+    fill: #909399;
+    transition: fill 0.2s;
+}
+
+.dep-line:hover + .dep-arrow,
+.dep-line.selected ~ .dep-arrow {
+    fill: #409eff;
+}
+
+.dep-line-preview {
+    fill: none;
+    stroke: #409eff;
+    stroke-width: 2;
+    stroke-dasharray: 6, 4;
+    pointer-events: none;
+}
+
+.toast {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: #303133;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.toast.error {
+    background: #f56c6c;
+}
+
+.toast.success {
+    background: #67c23a;
+}
+
+.flash-overlay {
+    position: fixed;
+    inset: 0;
+    background: #f56c6c;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9998;
+    transition: opacity 0.1s;
+}
+
+.flash-overlay.active {
+    opacity: 0.15;
+}
+
+.task-list::-webkit-scrollbar,
+.gantt-canvas::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.task-list::-webkit-scrollbar-track,
+.gantt-canvas::-webkit-scrollbar-track {
+    background: #f5f7fa;
+}
+
+.task-list::-webkit-scrollbar-thumb,
+.gantt-canvas::-webkit-scrollbar-thumb {
+    background: #dcdfe6;
+    border-radius: 4px;
+}
+
+.task-list::-webkit-scrollbar-thumb:hover,
+.gantt-canvas::-webkit-scrollbar-thumb:hover {
+    background: #c0c4cc;
+}
