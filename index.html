@@ -11,6 +11,12 @@
         <header class="toolbar">
             <h1>项目排程甘特图编辑器</h1>
             <div class="toolbar-actions">
+                <div class="view-switcher">
+                    <button class="view-btn active" data-view="day">日视图</button>
+                    <button class="view-btn" data-view="week">周视图</button>
+                    <button class="view-btn" data-view="list">列表视图</button>
+                </div>
+                <button id="btn-print-preview" class="btn">打印预览</button>
                 <button id="btn-view-toggle" class="btn">资源视图</button>
                 <button id="btn-balance" class="btn btn-primary">自动平衡</button>
                 <button id="btn-undo-balance" class="btn" disabled>撤销平衡</button>
@@ -77,7 +83,7 @@
             </aside>
 
             <section class="canvas-container">
-                <div class="timeline-header">
+                <div id="timeline-header" class="timeline-header">
                     <div class="timeline-sticky">时间轴</div>
                     <div id="timeline-scale-wrapper" class="timeline-scale-wrapper">
                         <div id="timeline-scale" class="timeline-scale"></div>
@@ -93,6 +99,20 @@
         <div id="toast" class="toast"></div>
 
         <div id="flash-overlay" class="flash-overlay"></div>
+
+        <div id="print-preview-overlay" class="print-preview-overlay hidden">
+            <div class="print-preview-toolbar">
+                <span class="print-preview-title">打印预览</span>
+                <div class="print-preview-controls">
+                    <button id="btn-print-prev" class="btn btn-sm">上一页</button>
+                    <span id="print-page-info" class="print-page-info">1 / 1</span>
+                    <button id="btn-print-next" class="btn btn-sm">下一页</button>
+                    <button id="btn-print-do" class="btn btn-primary btn-sm">打印</button>
+                    <button id="btn-print-close" class="btn btn-sm">关闭</button>
+                </div>
+            </div>
+            <div id="print-preview-container" class="print-preview-container"></div>
+        </div>
     </div>
 
     <script src="app.js"></script>

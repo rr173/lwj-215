@@ -2,6 +2,7 @@
     'use strict';
 
     const DAY_WIDTH = 32;
+    const WEEK_WIDTH = 96;
     const MAX_TASKS = 100;
     const TASK_HEIGHT = 48;
     const GROUP_SUMMARY_HEIGHT = 32;
@@ -20,7 +21,15 @@
         preBalanceState: null,
         dragState: null,
         depDragState: null,
-        idCounter: 1
+        idCounter: 1,
+        currentView: 'day',
+        listSortField: null,
+        listSortDirection: 'asc',
+        printPreviewState: {
+            currentPage: 1,
+            totalPages: 1,
+            pages: []
+        }
     };
 
     const utils = {
@@ -108,6 +117,83 @@
 
         getEffectiveDuration(task) {
             return task.type === 'milestone' ? 0 : (task.duration || 1);
+        },
+
+        getWeekNumber(date) {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+        },
+
+        getWeekStart(date) {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            d.setDate(diff);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        },
+
+        getWeekEnd(date) {
+            const start = this.getWeekStart(date);
+            const end = new Date(start);
+            end.setDate(end.getDate() + 6);
+            end.setHours(23, 59, 59, 999);
+            return end;
+        },
+
+        diffWeeks(date1, date2) {
+            const w1 = this.getWeekStart(date1);
+            const w2 = this.getWeekStart(date2);
+            return Math.round((w2 - w1) / (7 * 24 * 60 * 60 * 1000));
+        },
+
+        snapToWeek(day) {
+            const date = this.addDays(state.projectStart, day);
+            const weekStart = this.getWeekStart(date);
+            return this.diffDays(state.projectStart, weekStart);
+        },
+
+        formatWeekRange(date) {
+            const start = this.getWeekStart(date);
+            const end = this.getWeekEnd(date);
+            const weekNum = this.getWeekNumber(start);
+            const m1 = start.getMonth() + 1;
+            const d1 = start.getDate();
+            const m2 = end.getMonth() + 1;
+            const d2 = end.getDate();
+            return `第${weekNum}周 ${m1}/${d1}-${m2}/${d2}`;
+        },
+
+        getWeekLabel(date) {
+            const weekNum = this.getWeekNumber(date);
+            const start = this.getWeekStart(date);
+            const end = this.getWeekEnd(date);
+            return {
+                weekNum,
+                startLabel: `${start.getMonth() + 1}/${start.getDate()}`,
+                endLabel: `${end.getMonth() + 1}/${end.getDate()}`
+            };
+        },
+
+        getTaskStatus(task) {
+            if (task.progress >= 100) return 'completed';
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const todayDay = this.diffDays(state.projectStart, today);
+            const endDay = task._startDay + (task.duration || 0);
+            if (todayDay > endDay) return 'lagging';
+            return 'inprogress';
+        },
+
+        getPredecessorNames(taskId) {
+            const preds = state.dependencies.filter(d => d.to === taskId);
+            return preds.map(d => {
+                const t = state.tasks.find(x => x.id === d.from);
+                return t ? t.name : '';
+            }).filter(Boolean).join(', ');
         }
     };
 
@@ -702,17 +788,63 @@
             return Math.max(60, maxDay + 30);
         },
 
+        getTimelineWeeks() {
+            const totalDays = this.getTimelineDays();
+            const endDate = utils.addDays(state.projectStart, totalDays);
+            const startWeek = utils.getWeekStart(state.projectStart);
+            const endWeek = utils.getWeekEnd(endDate);
+            return Math.ceil((endWeek - startWeek) / (7 * 24 * 60 * 60 * 1000)) + 1;
+        },
+
+        getUnitWidth() {
+            return state.currentView === 'week' ? WEEK_WIDTH : DAY_WIDTH;
+        },
+
         renderAll() {
             scheduler.calculateSchedule();
-            this.renderTimeline();
-            this.renderTaskList();
-            this.renderGantt();
-            this.renderDependencies();
+            if (state.currentView === 'list') {
+                this.renderListView();
+            } else {
+                this.renderTimeline();
+                this.renderTaskList();
+                this.renderGantt();
+                this.renderDependencies();
+            }
             this.updateTaskCount();
             statsManager.updateStats();
         },
 
+        switchView(view) {
+            state.currentView = view;
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.view === view);
+            });
+            document.getElementById('timeline-header').style.display = (view === 'list') ? 'none' : '';
+            document.getElementById('gantt-canvas').style.display = (view === 'list') ? 'none' : '';
+            const canvasContainer = document.querySelector('.canvas-container');
+            let listView = document.getElementById('list-view-container');
+            if (!listView) {
+                listView = document.createElement('div');
+                listView.id = 'list-view-container';
+                listView.className = 'list-view-container';
+                canvasContainer.appendChild(listView);
+            }
+            listView.style.display = (view === 'list') ? '' : 'none';
+            document.getElementById('btn-view-toggle').style.display = (view === 'list') ? 'none' : '';
+            document.getElementById('btn-balance').style.display = (view === 'list') ? 'none' : '';
+            document.getElementById('btn-undo-balance').style.display = (view === 'list') ? 'none' : '';
+            this.renderAll();
+        },
+
         renderTimeline() {
+            if (state.currentView === 'week') {
+                this.renderWeekTimeline();
+            } else {
+                this.renderDayTimeline();
+            }
+        },
+
+        renderDayTimeline() {
             const container = document.getElementById('timeline-scale');
             const totalDays = this.getTimelineDays();
             const width = totalDays * DAY_WIDTH;
@@ -765,6 +897,51 @@
             monthRow.appendChild(label);
 
             container.appendChild(monthRow);
+            container.appendChild(dayRow);
+        },
+
+        renderWeekTimeline() {
+            const container = document.getElementById('timeline-scale');
+            const totalWeeks = this.getTimelineWeeks();
+            const width = totalWeeks * WEEK_WIDTH;
+            container.style.width = width + 'px';
+            container.innerHTML = '';
+
+            const weekRow = document.createElement('div');
+            weekRow.className = 'timeline-week-row';
+            const dayRow = document.createElement('div');
+            dayRow.className = 'timeline-week-row';
+
+            const startWeek = utils.getWeekStart(state.projectStart);
+
+            for (let w = 0; w < totalWeeks; w++) {
+                const weekDate = new Date(startWeek);
+                weekDate.setDate(weekDate.getDate() + w * 7);
+                const weekInfo = utils.getWeekLabel(weekDate);
+
+                const weekLabel = document.createElement('div');
+                weekLabel.className = 'timeline-week-label';
+                weekLabel.textContent = `第${weekInfo.weekNum}周 ${weekInfo.startLabel}-${weekInfo.endLabel}`;
+                weekLabel.style.left = (w * WEEK_WIDTH) + 'px';
+                weekLabel.style.width = WEEK_WIDTH + 'px';
+                weekRow.appendChild(weekLabel);
+
+                const weekStartDay = utils.diffDays(state.projectStart, weekDate);
+                for (let d = 0; d < 7; d++) {
+                    const dayDate = utils.addDays(weekDate, d);
+                    const dayLabel = document.createElement('div');
+                    dayLabel.className = 'timeline-week-day-label';
+                    const dayOfWeek = dayDate.getDay();
+                    if (dayOfWeek === 0 || dayOfWeek === 6) {
+                        dayLabel.classList.add('weekend');
+                    }
+                    dayLabel.textContent = dayDate.getDate();
+                    dayLabel.style.left = (w * WEEK_WIDTH + (d + 0.5) * (WEEK_WIDTH / 7)) + 'px';
+                    dayRow.appendChild(dayLabel);
+                }
+            }
+
+            container.appendChild(weekRow);
             container.appendChild(dayRow);
         },
 
@@ -1119,7 +1296,12 @@
         renderGantt() {
             const rowsContainer = document.getElementById('gantt-rows');
             const totalDays = this.getTimelineDays();
-            const width = totalDays * DAY_WIDTH;
+            let width;
+            if (state.currentView === 'week') {
+                width = this.getTimelineWeeks() * WEEK_WIDTH;
+            } else {
+                width = totalDays * DAY_WIDTH;
+            }
             rowsContainer.innerHTML = '';
             rowsContainer.style.height = layoutManager.getTotalHeight() + 'px';
 
@@ -1139,6 +1321,27 @@
             this.renderTodayLine(rowsContainer, totalDays);
         },
 
+        dayToPosition(day) {
+            if (state.currentView === 'week') {
+                const date = utils.addDays(state.projectStart, day);
+                const startWeek = utils.getWeekStart(state.projectStart);
+                const weekStart = utils.getWeekStart(date);
+                const weekIdx = Math.round((weekStart - startWeek) / (7 * 24 * 60 * 60 * 1000));
+                const dayInWeek = (date.getDay() + 6) % 7;
+                return weekIdx * WEEK_WIDTH + dayInWeek * (WEEK_WIDTH / 7);
+            } else {
+                return day * DAY_WIDTH;
+            }
+        },
+
+        daysToWidth(days) {
+            if (state.currentView === 'week') {
+                return days * (WEEK_WIDTH / 7);
+            } else {
+                return days * DAY_WIDTH;
+            }
+        },
+
         renderTodayLine(container, totalDays) {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -1148,7 +1351,8 @@
 
             const todayLine = document.createElement('div');
             todayLine.className = 'today-line';
-            todayLine.style.left = (todayDay * DAY_WIDTH + DAY_WIDTH / 2) + 'px';
+            const unitOffset = state.currentView === 'week' ? WEEK_WIDTH / 14 : DAY_WIDTH / 2;
+            todayLine.style.left = (this.dayToPosition(todayDay) + unitOffset) + 'px';
 
             const label = document.createElement('div');
             label.className = 'today-line-label';
@@ -1214,8 +1418,9 @@
             if (range && range.end >= range.start) {
                 const summary = document.createElement('div');
                 summary.className = 'group-summary-bar';
-                summary.style.left = (range.start * DAY_WIDTH) + 'px';
-                const barWidth = Math.max(DAY_WIDTH, (range.end - range.start) * DAY_WIDTH);
+                summary.style.left = this.dayToPosition(range.start) + 'px';
+                const minBarWidth = state.currentView === 'week' ? WEEK_WIDTH / 7 : DAY_WIDTH;
+                const barWidth = Math.max(minBarWidth, this.daysToWidth(range.end - range.start));
                 summary.style.width = barWidth + 'px';
 
                 const taskCount = row.tasks.length;
@@ -1269,17 +1474,34 @@
         },
 
         renderGridColumns(grid, totalDays) {
-            for (let d = 0; d < totalDays; d++) {
-                const col = document.createElement('div');
-                col.className = 'grid-column';
-                const date = utils.addDays(state.projectStart, d);
-                const dow = date.getDay();
-                if (dow === 0 || dow === 6) {
-                    col.classList.add('weekend');
+            if (state.currentView === 'week') {
+                const totalWeeks = this.getTimelineWeeks();
+                const startWeek = utils.getWeekStart(state.projectStart);
+                for (let w = 0; w < totalWeeks; w++) {
+                    const col = document.createElement('div');
+                    col.className = 'grid-column';
+                    const weekDate = new Date(startWeek);
+                    weekDate.setDate(weekDate.getDate() + w * 7);
+                    const weekEnd = utils.getWeekEnd(weekDate);
+                    if (weekDate.getDay() === 0 || weekDate.getDay() === 6) {
+                    }
+                    col.style.left = (w * WEEK_WIDTH) + 'px';
+                    col.style.width = WEEK_WIDTH + 'px';
+                    grid.appendChild(col);
                 }
-                col.style.left = (d * DAY_WIDTH) + 'px';
-                col.style.width = DAY_WIDTH + 'px';
-                grid.appendChild(col);
+            } else {
+                for (let d = 0; d < totalDays; d++) {
+                    const col = document.createElement('div');
+                    col.className = 'grid-column';
+                    const date = utils.addDays(state.projectStart, d);
+                    const dow = date.getDay();
+                    if (dow === 0 || dow === 6) {
+                        col.classList.add('weekend');
+                    }
+                    col.style.left = (d * DAY_WIDTH) + 'px';
+                    col.style.width = DAY_WIDTH + 'px';
+                    grid.appendChild(col);
+                }
             }
         },
 
@@ -1290,8 +1512,9 @@
                     const baselineBar = document.createElement('div');
                     baselineBar.className = 'baseline-bar';
                     const baselineDuration = baselineTask.duration || 0;
-                    baselineBar.style.left = (baselineTask.startDay * DAY_WIDTH) + 'px';
-                    baselineBar.style.width = Math.max(DAY_WIDTH, baselineDuration * DAY_WIDTH) + 'px';
+                    baselineBar.style.left = this.dayToPosition(baselineTask.startDay) + 'px';
+                    const minWidth = state.currentView === 'week' ? WEEK_WIDTH / 7 : DAY_WIDTH;
+                    baselineBar.style.width = Math.max(minWidth, this.daysToWidth(baselineDuration)) + 'px';
                     grid.appendChild(baselineBar);
                 }
             }
@@ -1303,8 +1526,8 @@
             if (task._isCritical) bar.classList.add('critical');
             if (task.id === state.selectedTaskId) bar.classList.add('selected');
 
-            bar.style.left = (task._startDay * DAY_WIDTH) + 'px';
-            bar.style.width = (task.duration * DAY_WIDTH) + 'px';
+            bar.style.left = this.dayToPosition(task._startDay) + 'px';
+            bar.style.width = this.daysToWidth(task.duration) + 'px';
 
             const progressFill = document.createElement('div');
             progressFill.className = 'task-bar-progress';
@@ -1325,7 +1548,7 @@
             if (conflicts[task.id] && conflicts[task.id].length > 0) {
                 const warning = document.createElement('div');
                 warning.className = 'task-warning-bar';
-                warning.style.width = (task.duration * DAY_WIDTH) + 'px';
+                warning.style.width = this.daysToWidth(task.duration) + 'px';
                 bar.appendChild(warning);
             }
 
@@ -1339,7 +1562,7 @@
                     } else {
                         triangle.classList.add('advanced');
                     }
-                    triangle.style.left = (task._startDay * DAY_WIDTH - 10) + 'px';
+                    triangle.style.left = (this.dayToPosition(task._startDay) - 10) + 'px';
                     grid.appendChild(triangle);
                 }
             }
@@ -1354,7 +1577,7 @@
                 if (baselineTask) {
                     const baselineMarker = document.createElement('div');
                     baselineMarker.className = 'baseline-marker';
-                    baselineMarker.style.left = (baselineTask.startDay * DAY_WIDTH + 3) + 'px';
+                    baselineMarker.style.left = (this.dayToPosition(baselineTask.startDay) + 3) + 'px';
                     grid.appendChild(baselineMarker);
                 }
             }
@@ -1367,7 +1590,7 @@
             if (task.id === state.selectedTaskId) marker.classList.add('selected');
             if (task.progress === 100) marker.classList.add('completed');
 
-            marker.style.left = (task._startDay * DAY_WIDTH) + 'px';
+            marker.style.left = this.dayToPosition(task._startDay) + 'px';
 
             const depHandle = document.createElement('div');
             depHandle.className = 'milestone-dep-handle';
@@ -1390,7 +1613,7 @@
                     } else {
                         triangle.classList.add('advanced');
                     }
-                    triangle.style.left = (task._startDay * DAY_WIDTH - 10) + 'px';
+                    triangle.style.left = (this.dayToPosition(task._startDay) - 10) + 'px';
                     grid.appendChild(triangle);
                 }
             }
@@ -1431,8 +1654,16 @@
                 const onMove = (ev) => {
                     if (!isDragging) return;
                     const dx = ev.clientX - startX;
-                    const dayDelta = Math.round(dx / DAY_WIDTH);
+                    let dayDelta;
+                    if (state.currentView === 'week') {
+                        dayDelta = Math.round(dx / WEEK_WIDTH) * 7;
+                    } else {
+                        dayDelta = Math.round(dx / DAY_WIDTH);
+                    }
                     let newStart = originalStartDay + dayDelta;
+                    if (state.currentView === 'week') {
+                        newStart = utils.snapToWeek(newStart);
+                    }
                     newStart = Math.max(0, newStart);
                     const minValid = this.getMinValidStart(task.id);
                     const isValid = newStart >= minValid;
@@ -1440,7 +1671,7 @@
                     state.dragState.currentStartDay = newStart;
                     state.dragState.isValid = isValid;
 
-                    bar.style.left = (newStart * DAY_WIDTH) + 'px';
+                    bar.style.left = this.dayToPosition(newStart) + 'px';
                     if (isValid) {
                         bar.classList.remove('invalid');
                     } else {
@@ -1459,6 +1690,9 @@
                         finalStart = state.dragState.currentStartDay;
                     } else {
                         finalStart = this.getMinValidStart(task.id);
+                    }
+                    if (state.currentView === 'week') {
+                        finalStart = utils.snapToWeek(finalStart);
                     }
 
                     if (finalStart !== originalStartDay) {
@@ -1523,7 +1757,7 @@
                 const rect = canvas.getBoundingClientRect();
 
                 const fromRowIdx = layoutManager.getTaskRowIndex(task.id);
-                const fromX1 = (task._startDay + effDuration) * DAY_WIDTH;
+                const fromX1 = this.dayToPosition(task._startDay + effDuration);
                 let fromY;
                 if (state.isResourceView) {
                     fromY = fromRowIdx * TASK_HEIGHT + TASK_HEIGHT / 2;
@@ -1594,8 +1828,14 @@
             const svg = document.getElementById('dependency-svg');
             const totalDays = this.getTimelineDays();
             const totalHeight = Math.max(100, layoutManager.getTotalHeight());
+            let svgWidth;
+            if (state.currentView === 'week') {
+                svgWidth = this.getTimelineWeeks() * WEEK_WIDTH;
+            } else {
+                svgWidth = totalDays * DAY_WIDTH;
+            }
 
-            svg.setAttribute('width', totalDays * DAY_WIDTH);
+            svg.setAttribute('width', svgWidth);
             svg.setAttribute('height', totalHeight + 100);
             svg.innerHTML = `
                 <defs>
@@ -1625,8 +1865,8 @@
                     toY = layoutManager.getRowYOffset(toRowIdx) + TASK_HEIGHT / 2;
                 }
 
-                const fromX = (fromTask._startDay + fromDuration) * DAY_WIDTH;
-                const toX = toTask._startDay * DAY_WIDTH;
+                const fromX = this.dayToPosition(fromTask._startDay + fromDuration);
+                const toX = this.dayToPosition(toTask._startDay);
 
                 const midX = (fromX + toX) / 2;
                 const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -1670,6 +1910,418 @@
             const div = document.createElement('div');
             div.textContent = str || '';
             return div.innerHTML;
+        },
+
+        renderListView() {
+            const container = document.getElementById('list-view-container');
+            if (!container) return;
+
+            const sortField = state.listSortField;
+            const sortDir = state.listSortDirection;
+
+            let sortedTasks = [...state.tasks];
+            if (sortField) {
+                sortedTasks.sort((a, b) => {
+                    let va, vb;
+                    switch (sortField) {
+                        case 'name':
+                            va = a.name || '';
+                            vb = b.name || '';
+                            return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+                        case 'duration':
+                            va = a.duration || 0;
+                            vb = b.duration || 0;
+                            return sortDir === 'asc' ? va - vb : vb - va;
+                        case 'startDate':
+                            va = a._startDay || 0;
+                            vb = b._startDay || 0;
+                            return sortDir === 'asc' ? va - vb : vb - va;
+                        case 'progress':
+                            va = a.progress || 0;
+                            vb = b.progress || 0;
+                            return sortDir === 'asc' ? va - vb : vb - va;
+                        default:
+                            return 0;
+                    }
+                });
+            }
+
+            const columns = [
+                { key: 'name', label: '任务名称' },
+                { key: 'duration', label: '工期(天)' },
+                { key: 'assignee', label: '负责人' },
+                { key: 'startDate', label: '开始日期' },
+                { key: 'endDate', label: '结束日期' },
+                { key: 'progress', label: '完成度' },
+                { key: 'predecessors', label: '前置任务' },
+                { key: 'status', label: '状态' }
+            ];
+
+            let html = '<table class="list-view-table"><thead><tr>';
+            columns.forEach(col => {
+                let sortClass = '';
+                if (sortField === col.key) {
+                    sortClass = sortDir === 'asc' ? 'sort-asc' : 'sort-desc';
+                }
+                html += `<th data-field="${col.key}" class="${sortClass}">${col.label}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            const renderedTaskIds = new Set();
+
+            state.groups.forEach(group => {
+                const toggleChar = group.collapsed ? '▶' : '▼';
+                const toggleClass = group.collapsed ? '' : 'expanded';
+                html += `<tr class="group-row" data-group-id="${group.id}">
+                    <td colspan="8">
+                        <span class="group-toggle ${toggleClass}">${toggleChar}</span>
+                        ${this.escapeHtml(group.name)}
+                    </td>
+                </tr>`;
+                if (!group.collapsed) {
+                    const groupTasks = sortedTasks.filter(t => t.groupId === group.id);
+                    groupTasks.forEach(task => {
+                        renderedTaskIds.add(task.id);
+                        html += this.renderListTaskRow(task, true);
+                    });
+                }
+            });
+
+            const ungroupedTasks = sortedTasks.filter(t => !t.groupId && !renderedTaskIds.has(t.id));
+            if (state.groups.length > 0 && ungroupedTasks.length > 0) {
+                html += `<tr class="group-row"><td colspan="8" style="color:#909399;font-weight:500;">未分组</td></tr>`;
+            }
+            ungroupedTasks.forEach(task => {
+                html += this.renderListTaskRow(task, false);
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+
+            container.querySelectorAll('th[data-field]').forEach(th => {
+                th.addEventListener('click', () => {
+                    const field = th.dataset.field;
+                    if (state.listSortField === field) {
+                        state.listSortDirection = state.listSortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        state.listSortField = field;
+                        state.listSortDirection = 'asc';
+                    }
+                    this.renderListView();
+                });
+            });
+
+            container.querySelectorAll('.group-row').forEach(row => {
+                const groupId = row.dataset.groupId;
+                if (groupId) {
+                    row.addEventListener('click', () => {
+                        groupManager.toggleGroup(groupId);
+                    });
+                }
+            });
+
+            this.attachListEditEvents(container);
+        },
+
+        renderListTaskRow(task, inGroup) {
+            const startDate = utils.formatDate(utils.addDays(state.projectStart, task._startDay));
+            const effDuration = utils.getEffectiveDuration(task);
+            const endDate = utils.formatDate(utils.addDays(state.projectStart, task._startDay + effDuration));
+            const status = utils.getTaskStatus(task);
+            const statusText = status === 'completed' ? '已完成' : (status === 'lagging' ? '滞后' : '进行中');
+            const predecessors = utils.getPredecessorNames(task.id);
+            const progress = task.progress || 0;
+
+            const rowClass = inGroup ? 'task-row in-group' : 'task-row';
+            const durationDisplay = task.type === 'milestone' ? '里程碑' : task.duration;
+            const durationInput = task.type === 'milestone'
+                ? `<span style="color:#b88230;font-weight:500;">里程碑</span>`
+                : `<input type="number" class="list-edit list-edit-duration" min="1" max="60" value="${task.duration}" data-id="${task.id}" />`;
+
+            return `<tr class="${rowClass}" data-task-id="${task.id}">
+                <td><input type="text" class="list-edit list-edit-name" value="${this.escapeHtml(task.name)}" data-id="${task.id}" /></td>
+                <td>${durationInput}</td>
+                <td><input type="text" class="list-edit list-edit-assignee" value="${this.escapeHtml(task.assignee || '')}" data-id="${task.id}" ${task.type === 'milestone' ? 'disabled style="background:#f5f7fa;"' : ''} /></td>
+                <td>${startDate}</td>
+                <td>${endDate}</td>
+                <td>
+                    <div class="progress-cell">
+                        <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+                        <input type="number" class="list-edit list-edit-progress" min="0" max="100" value="${progress}" data-id="${task.id}" style="width:50px;min-width:50px;padding:2px 4px;font-size:11px;" />
+                    </div>
+                </td>
+                <td style="color:#606266;font-size:11px;">${this.escapeHtml(predecessors) || '-'}</td>
+                <td><span class="status-badge status-${status}">${statusText}</span></td>
+            </tr>`;
+        },
+
+        attachListEditEvents(container) {
+            container.querySelectorAll('.list-edit-name').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const task = state.tasks.find(t => t.id === e.target.dataset.id);
+                    if (task) {
+                        task.name = e.target.value || '未命名任务';
+                        this.renderListView();
+                    }
+                });
+            });
+
+            container.querySelectorAll('.list-edit-duration').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const task = state.tasks.find(t => t.id === e.target.dataset.id);
+                    if (task && task.type !== 'milestone') {
+                        let val = parseInt(e.target.value);
+                        if (isNaN(val)) val = 1;
+                        val = utils.clamp(val, 1, 60);
+                        e.target.value = val;
+                        task.duration = val;
+                        scheduler.calculateSchedule();
+                        this.renderListView();
+                    }
+                });
+            });
+
+            container.querySelectorAll('.list-edit-assignee').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const task = state.tasks.find(t => t.id === e.target.dataset.id);
+                    if (task) {
+                        task.assignee = e.target.value;
+                        this.renderListView();
+                    }
+                });
+            });
+
+            container.querySelectorAll('.list-edit-progress').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const task = state.tasks.find(t => t.id === e.target.dataset.id);
+                    if (task) {
+                        let val = parseInt(e.target.value);
+                        if (isNaN(val)) val = 0;
+                        val = utils.clamp(val, 0, 100);
+                        if (task.type === 'milestone') {
+                            val = val >= 50 ? 100 : 0;
+                        }
+                        e.target.value = val;
+                        task.progress = val;
+                        this.renderListView();
+                        statsManager.updateStats();
+                    }
+                });
+            });
+        },
+
+        openPrintPreview() {
+            const overlay = document.getElementById('print-preview-overlay');
+            overlay.classList.remove('hidden');
+            this.generatePrintPages();
+            state.printPreviewState.currentPage = 1;
+            this.updatePrintPreviewDisplay();
+        },
+
+        closePrintPreview() {
+            const overlay = document.getElementById('print-preview-overlay');
+            overlay.classList.add('hidden');
+        },
+
+        generatePrintPages() {
+            const pages = [];
+            const container = document.getElementById('print-preview-container');
+            container.innerHTML = '';
+
+            if (state.currentView === 'list') {
+                pages.push(this.createPrintPage('list', 0, state.tasks.length + state.groups.length));
+            } else {
+                const totalDays = this.getTimelineDays();
+                const daysPerPage = 30;
+                const totalPages = Math.max(1, Math.ceil(totalDays / daysPerPage));
+                for (let i = 0; i < totalPages; i++) {
+                    pages.push(this.createPrintPage(state.currentView, i * daysPerPage, Math.min((i + 1) * daysPerPage, totalDays)));
+                }
+            }
+
+            state.printPreviewState.pages = pages;
+            state.printPreviewState.totalPages = pages.length;
+
+            pages.forEach((page, idx) => {
+                const pageEl = document.createElement('div');
+                pageEl.className = 'print-page';
+                pageEl.dataset.page = idx + 1;
+                pageEl.style.display = idx === 0 ? '' : 'none';
+
+                const header = document.createElement('div');
+                header.className = 'print-page-header';
+                header.innerHTML = `
+                    <h2>项目排程甘特图</h2>
+                    <span class="print-page-number">第 ${idx + 1} 页 / 共 ${pages.length} 页</span>
+                `;
+                pageEl.appendChild(header);
+
+                const content = document.createElement('div');
+                content.className = 'print-page-content';
+                content.innerHTML = page.html;
+                pageEl.appendChild(content);
+
+                const footer = document.createElement('div');
+                footer.className = 'print-page-footer';
+                footer.textContent = `打印日期: ${utils.formatDateTime(new Date())}`;
+                pageEl.appendChild(footer);
+
+                container.appendChild(pageEl);
+            });
+        },
+
+        createPrintPage(view, startDay, endDay) {
+            if (view === 'list') {
+                return {
+                    html: this.renderPrintListView()
+                };
+            } else {
+                return {
+                    html: this.renderPrintGanttView(view, startDay, endDay),
+                    startDay,
+                    endDay
+                };
+            }
+        },
+
+        renderPrintListView() {
+            const columns = ['任务名称', '工期(天)', '负责人', '开始日期', '结束日期', '完成度', '前置任务', '状态'];
+            let html = '<table class="list-view-table" style="width:100%;border-collapse:collapse;"><thead><tr>';
+            columns.forEach(col => {
+                html += `<th style="padding:8px 10px;border:1px solid #dcdfe6;background:#fafbfc;font-weight:600;text-align:left;font-size:12px;">${col}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            state.groups.forEach(group => {
+                html += `<tr><td colspan="8" style="padding:8px 10px;border:1px solid #dcdfe6;background:#f0f5ff;font-weight:600;font-size:12px;">${this.escapeHtml(group.name)}</td></tr>`;
+                if (!group.collapsed) {
+                    const groupTasks = state.tasks.filter(t => t.groupId === group.id);
+                    groupTasks.forEach(task => {
+                        html += this.renderPrintTaskRow(task);
+                    });
+                }
+            });
+
+            const ungrouped = state.tasks.filter(t => !t.groupId);
+            ungrouped.forEach(task => {
+                html += this.renderPrintTaskRow(task);
+            });
+
+            html += '</tbody></table>';
+            return html;
+        },
+
+        renderPrintTaskRow(task) {
+            const startDate = utils.formatDate(utils.addDays(state.projectStart, task._startDay));
+            const effDuration = utils.getEffectiveDuration(task);
+            const endDate = utils.formatDate(utils.addDays(state.projectStart, task._startDay + effDuration));
+            const status = utils.getTaskStatus(task);
+            const statusText = status === 'completed' ? '已完成' : (status === 'lagging' ? '滞后' : '进行中');
+            const predecessors = utils.getPredecessorNames(task.id);
+            const progress = task.progress || 0;
+            const durationDisplay = task.type === 'milestone' ? '里程碑' : task.duration;
+
+            return `<tr>
+                <td style="padding:6px 10px;border:1px solid #ebeef5;font-size:12px;">${this.escapeHtml(task.name)}</td>
+                <td style="padding:6px 10px;border:1px solid #ebeef5;font-size:12px;">${durationDisplay}</td>
+                <td style="padding:6px 10px;border:1px solid #ebeef5;font-size:12px;">${this.escapeHtml(task.assignee || '')}</td>
+                <td style="padding:6px 10px;border:1px solid #ebeef5;font-size:12px;">${startDate}</td>
+                <td style="padding:6px 10px;border:1px solid #ebeef5;font-size:12px;">${endDate}</td>
+                <td style="padding:6px 10px;border:1px solid #ebeef5;font-size:12px;">${progress}%</td>
+                <td style="padding:6px 10px;border:1px solid #ebeef5;font-size:12px;">${this.escapeHtml(predecessors) || '-'}</td>
+                <td style="padding:6px 10px;border:1px solid #ebeef5;font-size:12px;">${statusText}</td>
+            </tr>`;
+        },
+
+        renderPrintGanttView(view, startDay, endDay) {
+            const unitWidth = view === 'week' ? (WEEK_WIDTH / 7) : DAY_WIDTH;
+            const daysCount = endDay - startDay;
+            const width = daysCount * unitWidth;
+            const rows = layoutManager.getVisibleRows();
+            let html = '';
+
+            html += '<div style="display:flex;border-bottom:1px solid #e4e7ed;background:#fafbfc;">';
+            html += `<div style="min-width:180px;padding:10px 16px;border-right:1px solid #ebeef5;font-size:12px;font-weight:600;color:#909399;">任务</div>`;
+            html += `<div style="flex:1;overflow:hidden;position:relative;">`;
+            for (let d = startDay; d < endDay; d++) {
+                const date = utils.addDays(state.projectStart, d);
+                html += `<div style="position:absolute;top:8px;left:${(d - startDay) * unitWidth + unitWidth / 2}px;transform:translateX(-50%);font-size:10px;color:#909399;">${date.getDate()}</div>`;
+            }
+            html += '</div></div>';
+
+            html += `<div style="position:relative;">`;
+            rows.forEach(row => {
+                const rowHeight = row.type === 'group-summary' ? GROUP_SUMMARY_HEIGHT : TASK_HEIGHT;
+                html += `<div style="display:flex;height:${rowHeight}px;border-bottom:1px solid #f0f2f5;">`;
+
+                if (row.type === 'group-summary') {
+                    const toggleChar = row.group.collapsed ? '▶' : '▼';
+                    html += `<div style="min-width:180px;padding:0 16px;display:flex;align-items:center;border-right:1px solid #ebeef5;background:#f0f2f5;font-size:12px;font-weight:600;color:#606266;"><span style="width:16px;">${toggleChar}</span>${this.escapeHtml(row.group.name)}</div>`;
+                } else if (row.type === 'resource') {
+                    html += `<div style="min-width:180px;padding:0 16px;display:flex;align-items:center;border-right:1px solid #ebeef5;background:#fafbfc;font-size:12px;font-weight:600;color:#303133;">${this.escapeHtml(row.key || '未分配')}</div>`;
+                } else {
+                    const prefix = row.task.type === 'milestone' ? '◆ ' : '';
+                    html += `<div style="min-width:180px;padding:0 16px;display:flex;align-items:center;border-right:1px solid #ebeef5;font-size:12px;color:#606266;${row.inGroup ? 'padding-left:32px;' : ''}">${prefix}${this.escapeHtml(row.task.name)}</div>`;
+                }
+
+                html += `<div style="flex:1;position:relative;">`;
+                if (row.type === 'group-summary') {
+                    const range = groupManager.getGroupTimeRange(row.group.id);
+                    if (range && range.end >= range.start) {
+                        const barLeft = Math.max(0, (range.start - startDay) * unitWidth);
+                        const barWidth = Math.min(width - barLeft, (range.end - range.start) * unitWidth);
+                        html += `<div style="position:absolute;top:50%;transform:translateY(-50%);left:${barLeft}px;width:${barWidth}px;height:18px;background:rgba(144,147,153,0.35);border:1px solid rgba(144,147,153,0.5);border-radius:4px;"></div>`;
+                    }
+                } else if (row.type === 'task' && row.task.type !== 'milestone') {
+                    const task = row.task;
+                    const barLeft = Math.max(0, (task._startDay - startDay) * unitWidth);
+                    const barWidth = Math.min(width - barLeft, (task.duration || 1) * unitWidth);
+                    const bgColor = task._isCritical ? '#f56c6c' : '#67c23a';
+                    const progress = task.progress || 0;
+                    html += `<div style="position:absolute;top:50%;transform:translateY(-50%);left:${barLeft}px;width:${barWidth}px;height:28px;background:${bgColor};border-radius:4px;display:flex;align-items:center;padding:0 8px;font-size:11px;color:#fff;font-weight:500;overflow:hidden;">
+                        <div style="position:absolute;top:0;left:0;height:100%;background:rgba(0,0,0,0.25);width:${progress}%;border-radius:4px 0 0 4px;"></div>
+                        <span style="position:relative;z-index:2;">${this.escapeHtml(task.name)}</span>
+                    </div>`;
+                } else if (row.type === 'task' && row.task.type === 'milestone') {
+                    const task = row.task;
+                    const markerLeft = Math.max(0, (task._startDay - startDay) * unitWidth);
+                    html += `<div style="position:absolute;top:50%;transform:translateY(-50%) rotate(45deg);left:${markerLeft}px;width:18px;height:18px;background:${task._isCritical ? '#f56c6c' : '#e6a23c'};border:2px solid ${task._isCritical ? '#c03434' : '#a87418'};"></div>`;
+                }
+                html += `</div></div>`;
+            });
+            html += `</div>`;
+            return html;
+        },
+
+        updatePrintPreviewDisplay() {
+            const pages = document.querySelectorAll('#print-preview-container .print-page');
+            pages.forEach((page, idx) => {
+                page.style.display = (idx + 1 === state.printPreviewState.currentPage) ? '' : 'none';
+            });
+            const info = document.getElementById('print-page-info');
+            if (info) {
+                info.textContent = `${state.printPreviewState.currentPage} / ${state.printPreviewState.totalPages}`;
+            }
+            document.getElementById('btn-print-prev').disabled = state.printPreviewState.currentPage <= 1;
+            document.getElementById('btn-print-next').disabled = state.printPreviewState.currentPage >= state.printPreviewState.totalPages;
+        },
+
+        prevPrintPage() {
+            if (state.printPreviewState.currentPage > 1) {
+                state.printPreviewState.currentPage--;
+                this.updatePrintPreviewDisplay();
+            }
+        },
+
+        nextPrintPage() {
+            if (state.printPreviewState.currentPage < state.printPreviewState.totalPages) {
+                state.printPreviewState.currentPage++;
+                this.updatePrintPreviewDisplay();
+            }
+        },
+
+        doPrint() {
+            window.print();
         }
     };
 
@@ -1877,6 +2529,32 @@
     };
 
     function initEvents() {
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                renderer.switchView(btn.dataset.view);
+            });
+        });
+
+        document.getElementById('btn-print-preview').addEventListener('click', () => {
+            renderer.openPrintPreview();
+        });
+
+        document.getElementById('btn-print-close').addEventListener('click', () => {
+            renderer.closePrintPreview();
+        });
+
+        document.getElementById('btn-print-prev').addEventListener('click', () => {
+            renderer.prevPrintPage();
+        });
+
+        document.getElementById('btn-print-next').addEventListener('click', () => {
+            renderer.nextPrintPage();
+        });
+
+        document.getElementById('btn-print-do').addEventListener('click', () => {
+            renderer.doPrint();
+        });
+
         document.getElementById('btn-add-task').addEventListener('click', () => {
             const typeSelect = document.getElementById('select-task-type');
             const type = typeSelect ? typeSelect.value : 'task';
