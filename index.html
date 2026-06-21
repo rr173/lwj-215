@@ -22,6 +22,34 @@
 
         <div class="main">
             <aside class="sidebar">
+                <div class="stats-panel">
+                    <div class="stats-header" id="stats-header">
+                        <span class="stats-toggle">▼</span>
+                        <h3>进度统计</h3>
+                    </div>
+                    <div class="stats-content" id="stats-content">
+                        <div class="stats-item">
+                            <span class="stats-label">整体完成率</span>
+                            <span class="stats-value" id="stats-completion">0%</span>
+                        </div>
+                        <div class="stats-progress-bar">
+                            <div class="stats-progress-fill" id="stats-progress-fill"></div>
+                        </div>
+                        <div class="stats-item">
+                            <span class="stats-label">滞后任务</span>
+                            <span class="stats-value stats-warning" id="stats-lagging">0 个</span>
+                        </div>
+                        <div class="stats-item stats-baseline" id="stats-baseline-item" style="display:none;">
+                            <span class="stats-label">平均偏差</span>
+                            <span class="stats-value" id="stats-avg-deviation">0 天</span>
+                        </div>
+                        <div class="stats-item stats-baseline" id="stats-max-deviation-item" style="display:none;">
+                            <span class="stats-label">最大偏差</span>
+                            <span class="stats-value" id="stats-max-deviation">-</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="sidebar-header">
                     <h2>任务列表</h2>
                     <div class="sidebar-header-btns">
@@ -34,6 +62,15 @@
                     </div>
                 </div>
                 <div id="task-list" class="task-list"></div>
+
+                <div class="baseline-panel">
+                    <div class="baseline-header">
+                        <h3>基线管理</h3>
+                        <button id="btn-save-baseline" class="btn btn-sm btn-primary">保存基线</button>
+                    </div>
+                    <div id="baseline-list" class="baseline-list"></div>
+                </div>
+
                 <div class="sidebar-footer">
                     <span id="task-count">0 / 100 个任务</span>
                 </div>

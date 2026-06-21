@@ -496,6 +496,8 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     pointer-events: none;
+    position: relative;
+    z-index: 2;
 }
 
 .task-warning-bar {
@@ -900,3 +902,331 @@ body {
 .group-task-row .gantt-row-label {
     padding-left: 32px;
 }
+
+.stats-panel {
+    background: #fff;
+    border-bottom: 1px solid #e4e7ed;
+}
+
+.stats-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.stats-header:hover {
+    background: #f5f7fa;
+}
+
+.stats-toggle {
+    font-size: 10px;
+    color: #909399;
+    margin-right: 8px;
+    transition: transform 0.2s;
+}
+
+.stats-toggle.collapsed {
+    transform: rotate(-90deg);
+}
+
+.stats-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #303133;
+    flex: 1;
+}
+
+.stats-content {
+    padding: 0 16px 14px;
+}
+
+.stats-content.collapsed {
+    display: none;
+}
+
+.stats-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 12px;
+}
+
+.stats-label {
+    color: #909399;
+}
+
+.stats-value {
+    color: #303133;
+    font-weight: 600;
+}
+
+.stats-value.stats-warning {
+    color: #e6a23c;
+}
+
+.stats-progress-bar {
+    height: 8px;
+    background: #ebeef5;
+    border-radius: 4px;
+    margin: 8px 0;
+    overflow: hidden;
+}
+
+.stats-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #67c23a 0%, #85ce61 100%);
+    border-radius: 4px;
+    transition: width 0.3s;
+    width: 0%;
+}
+
+.baseline-panel {
+    border-top: 1px solid #e4e7ed;
+    background: #fafbfc;
+}
+
+.baseline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+}
+
+.baseline-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #303133;
+}
+
+.baseline-list {
+    padding: 0 12px 12px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.baseline-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    background: #fff;
+    border: 1px solid #ebeef5;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.baseline-item:hover {
+    border-color: #c0c4cc;
+}
+
+.baseline-item.active {
+    border-color: #409eff;
+    background: #ecf5ff;
+}
+
+.baseline-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.baseline-item-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #303133;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.baseline-item-time {
+    font-size: 11px;
+    color: #909399;
+    margin-top: 2px;
+}
+
+.baseline-item-delete {
+    color: #c0c4cc;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 14px;
+    margin-left: 6px;
+}
+
+.baseline-item-delete:hover {
+    color: #f56c6c;
+    background: #fef0f0;
+}
+
+.baseline-empty {
+    text-align: center;
+    color: #c0c4cc;
+    font-size: 12px;
+    padding: 16px 0;
+}
+
+.task-progress-wrapper {
+    margin-bottom: 6px;
+}
+
+.task-progress-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: #909399;
+    margin-bottom: 4px;
+}
+
+.task-progress-slider {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    background: #ebeef5;
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+}
+
+.task-progress-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #409eff;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.task-progress-input {
+    width: 45px;
+    padding: 2px 4px;
+    border: 1px solid #dcdfe6;
+    border-radius: 3px;
+    font-size: 11px;
+    text-align: center;
+    color: #606266;
+    outline: none;
+}
+
+.task-progress-input:focus {
+    border-color: #409eff;
+}
+
+.task-deviation {
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 6px;
+    flex-shrink: 0;
+}
+
+.task-deviation.delayed {
+    color: #f56c6c;
+}
+
+.task-deviation.advanced {
+    color: #67c23a;
+}
+
+.task-lagging {
+    font-size: 11px;
+    font-weight: 600;
+    color: #e6a23c;
+    margin-left: 6px;
+    flex-shrink: 0;
+}
+
+.task-bar-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 2px 0 0 2px;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.baseline-bar {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 10px;
+    background: rgba(144, 147, 153, 0.35);
+    border-radius: 2px;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.baseline-marker {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%) rotate(45deg);
+    width: 14px;
+    height: 14px;
+    background: rgba(144, 147, 153, 0.35);
+    border: 1px solid rgba(144, 147, 153, 0.5);
+    z-index: 0;
+    pointer-events: none;
+}
+
+.deviation-triangle {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    z-index: 3;
+    pointer-events: none;
+}
+
+.deviation-triangle.delayed {
+    border-right: 6px solid #f56c6c;
+}
+
+.deviation-triangle.advanced {
+    border-left: 6px solid #67c23a;
+}
+
+.today-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    z-index: 4;
+    pointer-events: none;
+    border-left: 2px dashed #f56c6c;
+}
+
+.today-line-label {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #f56c6c;
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    font-weight: 500;
+    border-left: none;
+}
+
+.milestone-marker.completed .milestone-marker-label {
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+.milestone-marker.completed {
+    opacity: 0.7;
+}
+

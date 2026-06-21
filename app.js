@@ -10,6 +10,9 @@
         tasks: [],
         groups: [],
         dependencies: [],
+        baselines: [],
+        selectedBaselineId: null,
+        statsCollapsed: false,
         projectStart: new Date(),
         selectedTaskId: null,
         selectedDepId: null,
@@ -48,6 +51,13 @@
                     if (n > maxId) maxId = n;
                 }
             });
+            state.baselines.forEach(b => {
+                const m = /id_(\d+)/.exec(b.id);
+                if (m) {
+                    const n = parseInt(m[1]);
+                    if (n > maxId) maxId = n;
+                }
+            });
             state.idCounter = maxId + 1;
         },
 
@@ -68,6 +78,11 @@
         formatDate(date) {
             const d = new Date(date);
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        },
+
+        formatDateTime(date) {
+            const d = new Date(date);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
         },
 
         showToast(msg, type = 'info') {
@@ -93,6 +108,215 @@
 
         getEffectiveDuration(task) {
             return task.type === 'milestone' ? 0 : (task.duration || 1);
+        }
+    };
+
+    const statsManager = {
+        toggleStats() {
+            state.statsCollapsed = !state.statsCollapsed;
+            const toggle = document.querySelector('.stats-toggle');
+            const content = document.getElementById('stats-content');
+            if (toggle) toggle.classList.toggle('collapsed', state.statsCollapsed);
+            if (content) content.classList.toggle('collapsed', state.statsCollapsed);
+        },
+
+        updateStats() {
+            const tasks = state.tasks.filter(t => t.type !== 'milestone');
+            const totalDuration = tasks.reduce((sum, t) => sum + (t.duration || 0), 0);
+            let weightedProgress = 0;
+            if (totalDuration > 0) {
+                weightedProgress = tasks.reduce((sum, t) => sum + (t.progress || 0) * (t.duration || 0), 0) / totalDuration;
+            }
+
+            const completionEl = document.getElementById('stats-completion');
+            const progressFillEl = document.getElementById('stats-progress-fill');
+            if (completionEl) completionEl.textContent = Math.round(weightedProgress) + '%';
+            if (progressFillEl) progressFillEl.style.width = Math.round(weightedProgress) + '%';
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const todayDay = utils.diffDays(state.projectStart, today);
+            let laggingCount = 0;
+            state.tasks.forEach(t => {
+                if (t.type === 'milestone') return;
+                const endDay = t._startDay + (t.duration || 0);
+                if (todayDay > t._startDay && (t.progress || 0) < 100) {
+                    laggingCount++;
+                }
+            });
+
+            const laggingEl = document.getElementById('stats-lagging');
+            if (laggingEl) laggingEl.textContent = laggingCount + ' 个';
+
+            const baselineItems = document.querySelectorAll('.stats-baseline');
+            if (state.selectedBaselineId) {
+                baselineItems.forEach(el => el.style.display = '');
+                this.updateBaselineStats();
+            } else {
+                baselineItems.forEach(el => el.style.display = 'none');
+            }
+        },
+
+        updateBaselineStats() {
+            if (!state.selectedBaselineId) return;
+
+            const baseline = state.baselines.find(b => b.id === state.selectedBaselineId);
+            if (!baseline) return;
+
+            let totalDeviation = 0;
+            let count = 0;
+            let maxDeviation = 0;
+            let maxDeviationTaskName = '';
+
+            baseline.tasks.forEach(bt => {
+                const task = state.tasks.find(t => t.id === bt.id);
+                if (task) {
+                    const deviation = task._startDay - bt.startDay;
+                    totalDeviation += deviation;
+                    count++;
+                    if (Math.abs(deviation) > Math.abs(maxDeviation)) {
+                        maxDeviation = deviation;
+                        maxDeviationTaskName = task.name;
+                    }
+                }
+            });
+
+            const avgDeviation = count > 0 ? (totalDeviation / count).toFixed(1) : 0;
+
+            const avgEl = document.getElementById('stats-avg-deviation');
+            const maxEl = document.getElementById('stats-max-deviation');
+
+            if (avgEl) {
+                avgEl.textContent = avgDeviation + ' 天';
+                avgEl.style.color = avgDeviation > 0 ? '#f56c6c' : (avgDeviation < 0 ? '#67c23a' : '#303133');
+            }
+            if (maxEl) {
+                if (maxDeviationTaskName) {
+                    maxEl.textContent = `${maxDeviationTaskName} (${maxDeviation > 0 ? '+' : ''}${maxDeviation}天)`;
+                    maxEl.style.color = maxDeviation > 0 ? '#f56c6c' : (maxDeviation < 0 ? '#67c23a' : '#303133');
+                } else {
+                    maxEl.textContent = '-';
+                }
+            }
+        }
+    };
+
+    const baselineManager = {
+        MAX_BASELINES: 3,
+
+        saveBaseline(name) {
+            if (state.baselines.length >= this.MAX_BASELINES) {
+                utils.showToast(`最多只能保存 ${this.MAX_BASELINES} 份基线`, 'error');
+                return null;
+            }
+
+            const baselineTasks = state.tasks.map(t => ({
+                id: t.id,
+                startDay: t._startDay,
+                duration: t.type === 'milestone' ? 0 : t.duration,
+                type: t.type
+            }));
+
+            const baseline = {
+                id: utils.uid(),
+                name: name || `基线 ${state.baselines.length + 1}`,
+                savedAt: new Date().toISOString(),
+                tasks: baselineTasks
+            };
+
+            state.baselines.push(baseline);
+            this.renderBaselineList();
+            utils.showToast('基线保存成功', 'success');
+            return baseline;
+        },
+
+        deleteBaseline(baselineId) {
+            if (!confirm('确定删除此基线？')) return;
+            state.baselines = state.baselines.filter(b => b.id !== baselineId);
+            if (state.selectedBaselineId === baselineId) {
+                state.selectedBaselineId = null;
+            }
+            this.renderBaselineList();
+            renderer.renderAll();
+            statsManager.updateStats();
+            utils.showToast('基线已删除', 'success');
+        },
+
+        selectBaseline(baselineId) {
+            if (state.selectedBaselineId === baselineId) {
+                state.selectedBaselineId = null;
+            } else {
+                state.selectedBaselineId = baselineId;
+            }
+            this.renderBaselineList();
+            renderer.renderAll();
+            statsManager.updateStats();
+        },
+
+        getBaselineTask(baselineId, taskId) {
+            const baseline = state.baselines.find(b => b.id === baselineId);
+            if (!baseline) return null;
+            return baseline.tasks.find(t => t.id === taskId) || null;
+        },
+
+        getTaskDeviation(taskId) {
+            if (!state.selectedBaselineId) return 0;
+            const baselineTask = this.getBaselineTask(state.selectedBaselineId, taskId);
+            if (!baselineTask) return null;
+            const task = state.tasks.find(t => t.id === taskId);
+            if (!task) return null;
+            return task._startDay - baselineTask.startDay;
+        },
+
+        renderBaselineList() {
+            const list = document.getElementById('baseline-list');
+            if (!list) return;
+
+            if (state.baselines.length === 0) {
+                list.innerHTML = '<div class="baseline-empty">暂无基线，点击上方按钮保存</div>';
+                return;
+            }
+
+            list.innerHTML = '';
+            state.baselines.forEach(baseline => {
+                const item = document.createElement('div');
+                item.className = 'baseline-item';
+                if (baseline.id === state.selectedBaselineId) {
+                    item.classList.add('active');
+                }
+                item.dataset.id = baseline.id;
+
+                const info = document.createElement('div');
+                info.className = 'baseline-item-info';
+
+                const name = document.createElement('div');
+                name.className = 'baseline-item-name';
+                name.textContent = baseline.name;
+                info.appendChild(name);
+
+                const time = document.createElement('div');
+                time.className = 'baseline-item-time';
+                time.textContent = utils.formatDateTime(new Date(baseline.savedAt));
+                info.appendChild(time);
+
+                item.appendChild(info);
+
+                const delBtn = document.createElement('span');
+                delBtn.className = 'baseline-item-delete';
+                delBtn.title = '删除基线';
+                delBtn.innerHTML = '×';
+                delBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.deleteBaseline(baseline.id);
+                });
+                item.appendChild(delBtn);
+
+                item.addEventListener('click', () => {
+                    this.selectBaseline(baseline.id);
+                });
+
+                list.appendChild(item);
+            });
         }
     };
 
@@ -485,6 +709,7 @@
             this.renderGantt();
             this.renderDependencies();
             this.updateTaskCount();
+            statsManager.updateStats();
         },
 
         renderTimeline() {
@@ -722,6 +947,20 @@
                 ? '<span class="task-type-badge milestone">里程碑</span>'
                 : '';
 
+            const deviation = state.selectedBaselineId ? baselineManager.getTaskDeviation(task.id) : null;
+            let deviationBadge = '';
+            if (deviation !== null && deviation !== 0) {
+                const devClass = deviation > 0 ? 'delayed' : 'advanced';
+                const devText = deviation > 0 ? `+${deviation}天` : `${deviation}天`;
+                deviationBadge = `<span class="task-deviation ${devClass}">${devText}</span>`;
+            }
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const todayDay = utils.diffDays(state.projectStart, today);
+            const isLagging = task.type !== 'milestone' && todayDay > task._startDay && (task.progress || 0) < 100;
+            const laggingBadge = isLagging ? '<span class="task-lagging">滞后</span>' : '';
+
             const durationField = task.type === 'milestone'
                 ? `<div class="task-item-field"><label>日期</label><div style="flex:1;font-size:12px;color:#b88230;font-weight:500;">${utils.formatDate(utils.addDays(state.projectStart, task._startDay))}</div></div>`
                 : `<div class="task-item-field">
@@ -736,15 +975,34 @@
                         <input type="date" class="task-earliest" value="${task.earliestStartDate ? utils.formatDate(new Date(task.earliestStartDate)) : ''}" />
                     </div>`;
 
+            const progressField = task.type === 'milestone'
+                ? `<div class="task-item-field">
+                        <label>状态</label>
+                        <select class="task-progress-select" style="flex:1;padding:4px 8px;border:1px solid #dcdfe6;border-radius:3px;font-size:12px;color:#606266;background:#fff;outline:none;">
+                            <option value="0" ${task.progress === 0 ? 'selected' : ''}>未达成</option>
+                            <option value="100" ${task.progress === 100 ? 'selected' : ''}>已达成</option>
+                        </select>
+                    </div>`
+                : `<div class="task-progress-wrapper">
+                        <div class="task-progress-label">
+                            <span>完成度</span>
+                            <input type="number" class="task-progress-input" min="0" max="100" value="${task.progress || 0}" />
+                        </div>
+                        <input type="range" class="task-progress-slider" min="0" max="100" value="${task.progress || 0}" />
+                    </div>`;
+
             item.innerHTML = `
                 <div class="task-item-header">
                     <div style="flex:1;display:flex;align-items:center;min-width:0;">
                         ${typeBadge}
                         <input type="text" class="task-item-name" value="${this.escapeHtml(task.name)}" />
                     </div>
+                    ${deviationBadge}
+                    ${laggingBadge}
                     <span class="task-item-delete" title="删除">×</span>
                 </div>
                 ${durationField}
+                ${progressField}
                 <div class="task-item-field">
                     <label>负责人</label>
                     <div class="assignee-wrapper">
@@ -794,6 +1052,9 @@
             const assigneeInput = item.querySelector('.assignee-input');
             const earliestInput = item.querySelector('.task-earliest');
             const delBtn = item.querySelector('.task-item-delete');
+            const progressSlider = item.querySelector('.task-progress-slider');
+            const progressInput = item.querySelector('.task-progress-input');
+            const progressSelect = item.querySelector('.task-progress-select');
 
             nameInput.addEventListener('focus', () => {
                 state.selectedTaskId = task.id;
@@ -832,6 +1093,24 @@
                 });
             }
 
+            if (progressSlider) {
+                progressSlider.addEventListener('input', (e) => {
+                    taskManager.setTaskProgress(task.id, e.target.value);
+                });
+            }
+
+            if (progressInput) {
+                progressInput.addEventListener('change', (e) => {
+                    taskManager.setTaskProgress(task.id, e.target.value);
+                });
+            }
+
+            if (progressSelect) {
+                progressSelect.addEventListener('change', (e) => {
+                    taskManager.setTaskProgress(task.id, e.target.value);
+                });
+            }
+
             delBtn.addEventListener('click', () => {
                 taskManager.deleteTask(task.id);
             });
@@ -856,6 +1135,27 @@
                     this.renderTaskRow(rowsContainer, row, width, totalDays, conflicts);
                 }
             });
+
+            this.renderTodayLine(rowsContainer, totalDays);
+        },
+
+        renderTodayLine(container, totalDays) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const todayDay = utils.diffDays(state.projectStart, today);
+
+            if (todayDay < 0 || todayDay >= totalDays) return;
+
+            const todayLine = document.createElement('div');
+            todayLine.className = 'today-line';
+            todayLine.style.left = (todayDay * DAY_WIDTH + DAY_WIDTH / 2) + 'px';
+
+            const label = document.createElement('div');
+            label.className = 'today-line-label';
+            label.textContent = '今天';
+            todayLine.appendChild(label);
+
+            container.appendChild(todayLine);
         },
 
         renderResourceRow(container, row, width, totalDays, conflicts) {
@@ -984,6 +1284,18 @@
         },
 
         renderTaskBar(grid, task, conflicts) {
+            if (state.selectedBaselineId) {
+                const baselineTask = baselineManager.getBaselineTask(state.selectedBaselineId, task.id);
+                if (baselineTask) {
+                    const baselineBar = document.createElement('div');
+                    baselineBar.className = 'baseline-bar';
+                    const baselineDuration = baselineTask.duration || 0;
+                    baselineBar.style.left = (baselineTask.startDay * DAY_WIDTH) + 'px';
+                    baselineBar.style.width = Math.max(DAY_WIDTH, baselineDuration * DAY_WIDTH) + 'px';
+                    grid.appendChild(baselineBar);
+                }
+            }
+
             const bar = document.createElement('div');
             bar.className = 'task-bar';
             bar.dataset.id = task.id;
@@ -993,6 +1305,12 @@
 
             bar.style.left = (task._startDay * DAY_WIDTH) + 'px';
             bar.style.width = (task.duration * DAY_WIDTH) + 'px';
+
+            const progressFill = document.createElement('div');
+            progressFill.className = 'task-bar-progress';
+            const progress = task.progress || 0;
+            progressFill.style.width = progress + '%';
+            bar.appendChild(progressFill);
 
             const label = document.createElement('span');
             label.className = 'task-bar-label';
@@ -1011,17 +1329,44 @@
                 bar.appendChild(warning);
             }
 
+            if (state.selectedBaselineId) {
+                const deviation = baselineManager.getTaskDeviation(task.id);
+                if (deviation !== null && deviation !== 0) {
+                    const triangle = document.createElement('div');
+                    triangle.className = 'deviation-triangle';
+                    if (deviation > 0) {
+                        triangle.classList.add('delayed');
+                        triangle.style.left = (task._startDay * DAY_WIDTH - 8) + 'px';
+                    } else {
+                        triangle.classList.add('advanced');
+                        triangle.style.left = ((task._startDay + task.duration) * DAY_WIDTH + 2) + 'px';
+                    }
+                    grid.appendChild(triangle);
+                }
+            }
+
             this.attachTaskBarEvents(bar, task, handleEnd);
             grid.appendChild(bar);
         },
 
         renderMilestone(grid, task) {
+            if (state.selectedBaselineId) {
+                const baselineTask = baselineManager.getBaselineTask(state.selectedBaselineId, task.id);
+                if (baselineTask) {
+                    const baselineMarker = document.createElement('div');
+                    baselineMarker.className = 'baseline-marker';
+                    baselineMarker.style.left = (baselineTask.startDay * DAY_WIDTH + 3) + 'px';
+                    grid.appendChild(baselineMarker);
+                }
+            }
+
             const marker = document.createElement('div');
             marker.className = 'milestone-marker';
             marker.dataset.id = task.id;
 
             if (task._isCritical) marker.classList.add('critical');
             if (task.id === state.selectedTaskId) marker.classList.add('selected');
+            if (task.progress === 100) marker.classList.add('completed');
 
             marker.style.left = (task._startDay * DAY_WIDTH) + 'px';
 
@@ -1035,6 +1380,22 @@
             label.textContent = `${task.name}`;
             label.style.left = (26) + 'px';
             label.style.top = '50%';
+
+            if (state.selectedBaselineId) {
+                const deviation = baselineManager.getTaskDeviation(task.id);
+                if (deviation !== null && deviation !== 0) {
+                    const triangle = document.createElement('div');
+                    triangle.className = 'deviation-triangle';
+                    if (deviation > 0) {
+                        triangle.classList.add('delayed');
+                        triangle.style.left = (task._startDay * DAY_WIDTH - 8) + 'px';
+                    } else {
+                        triangle.classList.add('advanced');
+                        triangle.style.left = (task._startDay * DAY_WIDTH + 24) + 'px';
+                    }
+                    grid.appendChild(triangle);
+                }
+            }
 
             this.attachMilestoneEvents(marker, task, depHandle);
             grid.appendChild(marker);
@@ -1329,6 +1690,7 @@
                 assignee: '',
                 earliestStartDate: null,
                 groupId: null,
+                progress: 0,
                 _startDay: 0,
                 _endDay: isMilestone ? 0 : 3,
                 _isCritical: false
@@ -1336,6 +1698,7 @@
             state.tasks.push(task);
             state.selectedTaskId = task.id;
             renderer.renderAll();
+            statsManager.updateStats();
         },
 
         deleteTask(taskId) {
@@ -1346,6 +1709,22 @@
             );
             if (state.selectedTaskId === taskId) state.selectedTaskId = null;
             renderer.renderAll();
+            statsManager.updateStats();
+        },
+
+        setTaskProgress(taskId, progress) {
+            const task = state.tasks.find(t => t.id === taskId);
+            if (!task) return;
+            let val = parseInt(progress);
+            if (isNaN(val)) val = 0;
+            val = utils.clamp(val, 0, 100);
+            if (task.type === 'milestone') {
+                val = val >= 50 ? 100 : 0;
+            }
+            task.progress = val;
+            renderer.renderGantt();
+            renderer.renderTaskList();
+            statsManager.updateStats();
         },
 
         addDependency(fromId, toId) {
@@ -1384,7 +1763,8 @@
                     assignee: t.assignee,
                     groupId: t.groupId || null,
                     earliestStartDate: t.earliestStartDate ?
-                        utils.formatDate(new Date(t.earliestStartDate)) : null
+                        utils.formatDate(new Date(t.earliestStartDate)) : null,
+                    progress: t.progress || 0
                 })),
                 groups: state.groups.map(g => ({
                     id: g.id,
@@ -1395,6 +1775,12 @@
                     id: d.id,
                     from: d.from,
                     to: d.to
+                })),
+                baselines: state.baselines.map(b => ({
+                    id: b.id,
+                    name: b.name,
+                    savedAt: b.savedAt,
+                    tasks: b.tasks
                 }))
             };
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1422,6 +1808,7 @@
                     const oldTasks = JSON.parse(JSON.stringify(state.tasks));
                     const oldDeps = JSON.parse(JSON.stringify(state.dependencies));
                     const oldGroups = JSON.parse(JSON.stringify(state.groups));
+                    const oldBaselines = JSON.parse(JSON.stringify(state.baselines));
                     const oldStart = new Date(state.projectStart);
 
                     state.tasks = data.tasks.map(t => ({
@@ -1429,6 +1816,7 @@
                         type: t.type || 'task',
                         groupId: t.groupId || null,
                         earliestStartDate: t.earliestStartDate ? new Date(t.earliestStartDate) : null,
+                        progress: t.progress !== undefined ? t.progress : 0,
                         _startDay: 0,
                         _endDay: 0,
                         _isCritical: false
@@ -1439,6 +1827,13 @@
                         collapsed: !!g.collapsed
                     })) : [];
                     state.dependencies = data.dependencies;
+                    state.baselines = Array.isArray(data.baselines) ? data.baselines.map(b => ({
+                        id: b.id,
+                        name: b.name,
+                        savedAt: b.savedAt,
+                        tasks: b.tasks || []
+                    })) : [];
+                    state.selectedBaselineId = null;
                     if (data.projectStart) {
                         state.projectStart = new Date(data.projectStart);
                     }
@@ -1448,6 +1843,7 @@
                         if (t.groupId && !validGroupIds.has(t.groupId)) {
                             t.groupId = null;
                         }
+                        if (t.progress === undefined) t.progress = 0;
                     });
 
                     const cycle = scheduler.detectCycle();
@@ -1460,6 +1856,7 @@
                         state.tasks = oldTasks;
                         state.dependencies = oldDeps;
                         state.groups = oldGroups;
+                        state.baselines = oldBaselines;
                         state.projectStart = oldStart;
 
                         utils.flashScreen();
@@ -1470,8 +1867,9 @@
                     state.selectedTaskId = null;
                     state.selectedDepId = null;
                     utils.syncIdCounter();
+                    baselineManager.renderBaselineList();
                     renderer.renderAll();
-                    utils.showToast(`成功导入 ${state.tasks.length} 个任务${state.groups.length ? `，${state.groups.length} 个分组` : ''}`, 'success');
+                    utils.showToast(`成功导入 ${state.tasks.length} 个任务${state.groups.length ? `，${state.groups.length} 个分组` : ''}${state.baselines.length ? `，${state.baselines.length} 份基线` : ''}`, 'success');
                 } catch (err) {
                     utils.showToast('导入失败: ' + err.message, 'error');
                 }
@@ -1552,6 +1950,24 @@
             e.target.value = '';
         });
 
+        document.getElementById('btn-save-baseline').addEventListener('click', () => {
+            if (state.baselines.length >= baselineManager.MAX_BASELINES) {
+                utils.showToast(`最多只能保存 ${baselineManager.MAX_BASELINES} 份基线，请先删除旧的`, 'error');
+                return;
+            }
+            const name = prompt('请输入基线名称：', `v${state.baselines.length + 1} 版本计划`);
+            if (name !== null) {
+                baselineManager.saveBaseline(name || '未命名基线');
+            }
+        });
+
+        const statsHeader = document.getElementById('stats-header');
+        if (statsHeader) {
+            statsHeader.addEventListener('click', () => {
+                statsManager.toggleStats();
+            });
+        }
+
         document.getElementById('gantt-canvas').addEventListener('click', (e) => {
             if (!e.target.closest('.task-bar') && !e.target.closest('.milestone-marker') && !e.target.closest('.dep-line')) {
                 state.selectedTaskId = null;
@@ -1581,6 +1997,7 @@
     function init() {
         state.projectStart.setHours(0, 0, 0, 0);
         initEvents();
+        baselineManager.renderBaselineList();
         renderer.renderAll();
     }
 
