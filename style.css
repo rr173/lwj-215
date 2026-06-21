@@ -764,12 +764,33 @@ body {
 }
 
 .ungrouped-label {
-    padding: 8px 12px 4px;
+    padding: 10px 12px;
     font-size: 11px;
     color: #909399;
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    border: 2px dashed transparent;
+    border-radius: 4px;
+    margin: 4px 0;
+    transition: all 0.2s;
+    cursor: default;
+}
+
+.ungrouped-label.drag-over {
+    border-color: #409eff;
+    background: #ecf5ff;
+    color: #409eff;
+}
+
+.task-list.drop-target-ungrouped {
+    background: repeating-linear-gradient(
+        45deg,
+        #ecf5ff,
+        #ecf5ff 10px,
+        #f0f7ff 10px,
+        #f0f7ff 20px
+    );
 }
 
 .milestone-marker {

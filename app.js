@@ -554,16 +554,61 @@
 
             list.innerHTML = '';
 
+            list.addEventListener('dragover', (e) => {
+                if (e.dataTransfer && e.dataTransfer.types.includes('text/task-id')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    list.classList.add('drop-target-ungrouped');
+                }
+            });
+            list.addEventListener('dragleave', (e) => {
+                if (e.target === list) {
+                    list.classList.remove('drop-target-ungrouped');
+                }
+            });
+            list.addEventListener('drop', (e) => {
+                list.classList.remove('drop-target-ungrouped');
+                const taskId = e.dataTransfer.getData('text/task-id');
+                if (taskId) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    groupManager.moveTaskToGroup(taskId, null);
+                    utils.showToast('已移出分组', 'success');
+                }
+            });
+
             state.groups.forEach(group => {
                 this.renderGroupItem(list, group, conflicts);
             });
 
             const ungroupedTasks = groupManager.getUngroupedTasks();
-            if (ungroupedTasks.length > 0) {
+            if (ungroupedTasks.length > 0 || state.groups.length > 0) {
                 if (state.groups.length > 0) {
                     const label = document.createElement('div');
                     label.className = 'ungrouped-label';
-                    label.textContent = '未分组';
+                    label.textContent = '未分组（可拖入此处移出分组）';
+
+                    label.addEventListener('dragover', (e) => {
+                        if (e.dataTransfer && e.dataTransfer.types.includes('text/task-id')) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            label.classList.add('drag-over');
+                        }
+                    });
+                    label.addEventListener('dragleave', () => {
+                        label.classList.remove('drag-over');
+                    });
+                    label.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        label.classList.remove('drag-over');
+                        const taskId = e.dataTransfer.getData('text/task-id');
+                        if (taskId) {
+                            groupManager.moveTaskToGroup(taskId, null);
+                            utils.showToast('已移出分组', 'success');
+                        }
+                    });
+
                     list.appendChild(label);
                 }
                 ungroupedTasks.forEach(task => {
@@ -640,6 +685,7 @@
             groupEl.addEventListener('dragover', (e) => {
                 if (e.dataTransfer && e.dataTransfer.types.includes('text/task-id')) {
                     e.preventDefault();
+                    e.stopPropagation();
                     groupEl.classList.add('drag-over');
                 }
             });
@@ -648,6 +694,7 @@
             });
             groupEl.addEventListener('drop', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 groupEl.classList.remove('drag-over');
                 const taskId = e.dataTransfer.getData('text/task-id');
                 if (taskId) {
@@ -723,6 +770,7 @@
                     const srcId = e.dataTransfer.getData('text/task-id');
                     if (srcId && srcId !== task.id) {
                         e.preventDefault();
+                        e.stopPropagation();
                         item.classList.add('drop-target');
                     }
                 }
@@ -863,18 +911,23 @@
             this.renderGridColumns(grid, totalDays);
 
             const range = groupManager.getGroupTimeRange(group.id);
-            if (range && range.end > range.start) {
+            if (range && range.end >= range.start) {
                 const summary = document.createElement('div');
                 summary.className = 'group-summary-bar';
                 summary.style.left = (range.start * DAY_WIDTH) + 'px';
-                summary.style.width = ((range.end - range.start) * DAY_WIDTH) + 'px';
+                const barWidth = Math.max(DAY_WIDTH, (range.end - range.start) * DAY_WIDTH);
+                summary.style.width = barWidth + 'px';
 
                 const taskCount = row.tasks.length;
                 const startDate = utils.formatDate(utils.addDays(state.projectStart, range.start));
                 const endDate = utils.formatDate(utils.addDays(state.projectStart, range.end));
                 const summaryLabel = document.createElement('span');
                 summaryLabel.className = 'group-summary-bar-label';
-                summaryLabel.textContent = `${taskCount}项  ${startDate} ~ ${endDate}`;
+                if (range.end === range.start) {
+                    summaryLabel.textContent = `${taskCount}项  ${startDate}`;
+                } else {
+                    summaryLabel.textContent = `${taskCount}项  ${startDate} ~ ${endDate}`;
+                }
                 summary.appendChild(summaryLabel);
                 grid.appendChild(summary);
             }
