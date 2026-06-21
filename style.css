@@ -1155,23 +1155,24 @@ body {
 
 .baseline-bar {
     position: absolute;
-    top: 50%;
+    top: calc(50% + 8px);
     transform: translateY(-50%);
-    height: 10px;
-    background: rgba(144, 147, 153, 0.35);
-    border-radius: 2px;
+    height: 6px;
+    background: rgba(144, 147, 153, 0.5);
+    border: 1px solid rgba(144, 147, 153, 0.7);
+    border-radius: 3px;
     z-index: 0;
     pointer-events: none;
 }
 
 .baseline-marker {
     position: absolute;
-    top: 50%;
+    top: calc(50% + 10px);
     transform: translateY(-50%) rotate(45deg);
-    width: 14px;
-    height: 14px;
-    background: rgba(144, 147, 153, 0.35);
-    border: 1px solid rgba(144, 147, 153, 0.5);
+    width: 12px;
+    height: 12px;
+    background: rgba(144, 147, 153, 0.5);
+    border: 1px solid rgba(144, 147, 153, 0.7);
     z-index: 0;
     pointer-events: none;
 }
@@ -1194,6 +1195,7 @@ body {
 
 .deviation-triangle.advanced {
     border-left: 6px solid #67c23a;
+    transform: translateY(-50%) rotate(180deg);
 }
 
 .today-line {

@@ -1336,11 +1336,10 @@
                     triangle.className = 'deviation-triangle';
                     if (deviation > 0) {
                         triangle.classList.add('delayed');
-                        triangle.style.left = (task._startDay * DAY_WIDTH - 8) + 'px';
                     } else {
                         triangle.classList.add('advanced');
-                        triangle.style.left = ((task._startDay + task.duration) * DAY_WIDTH + 2) + 'px';
                     }
+                    triangle.style.left = (task._startDay * DAY_WIDTH - 10) + 'px';
                     grid.appendChild(triangle);
                 }
             }
@@ -1388,11 +1387,10 @@
                     triangle.className = 'deviation-triangle';
                     if (deviation > 0) {
                         triangle.classList.add('delayed');
-                        triangle.style.left = (task._startDay * DAY_WIDTH - 8) + 'px';
                     } else {
                         triangle.classList.add('advanced');
-                        triangle.style.left = (task._startDay * DAY_WIDTH + 24) + 'px';
                     }
+                    triangle.style.left = (task._startDay * DAY_WIDTH - 10) + 'px';
                     grid.appendChild(triangle);
                 }
             }
